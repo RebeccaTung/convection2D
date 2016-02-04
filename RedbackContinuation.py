@@ -24,10 +24,16 @@ def getLogger(name, log_file='log.txt', level=logging.INFO):
     logger.setLevel(level)
     return logger
 
-def createRedbackFilesRequired(logger):
+def createRedbackFilesRequired(parameters, logger):
   ''' Create Redback files required to run continuation 
+      @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
+  # Create output csv file for S-curve results
+  with open(parameters['result_curve_csv'], 'wb') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow(['step', 'lambda', 'norm'])
+  # Create other input files
   logger.warning('TODO: createRedbackFilesRequired not implemented')
 
 def checkAndCleanInputParameters(parameters, logger):
@@ -42,7 +48,7 @@ def checkAndCleanInputParameters(parameters, logger):
     logger.error('"parameters" must be of type dictionary, not {0}!'.format(type(parameters)))
     return True
   all_keys = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'exec_loc',
-              'nb_threads', 'input_dir', 'running_dir']
+              'nb_threads', 'input_dir', 'running_dir', 'result_curve_csv']
   missing_param = False
   for param in all_keys:
     if not param in parameters.keys():
@@ -53,7 +59,7 @@ def checkAndCleanInputParameters(parameters, logger):
   # Ensure proper type of numerical parameters
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
   params_int = ['nb_threads']
-  params_str = ['exec_loc', 'input_dir', 'running_dir']
+  params_str = ['exec_loc', 'input_dir', 'running_dir', 'result_curve_csv']
   for param in params_real:
     if not type(parameters[param]) in [float, int]:
       logger.error('Input parameter "{0}={1}" should be a number!'.format(param, parameters[param]))
@@ -91,6 +97,7 @@ def checkAndCleanInputParameters(parameters, logger):
   parameters['input_dir'] = os.path.realpath(parameters['input_dir'])
   parameters['running_dir'] = os.path.realpath(parameters['running_dir'])
   parameters['exec_loc'] = os.path.realpath(exec_loc)
+  parameters['result_curve_csv'] = os.path.realpath(parameters['result_curve_csv'])
   # Create running directory if required
   if not os.path.isdir(parameters['running_dir']):
     os.mkdir(parameters['running_dir'])
@@ -102,14 +109,13 @@ def runInitialSimulation1():
   ''' Run initial simulation (the very first one) with provided value of lambda 
       @param[in] logger - python logger instance
   '''
-  logger.warning('TODO: input_file hardcoded in runInitialSimulation1')
   input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess1.i')
   command1 = '{exec_loc} --n-threads={nb_procs} '\
               '-i {input_i} Outputs/csv=true'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
                       input_i=input_file)
   try:
-    logger.info(command1)
+    logger.debug(command1)
     retcode = subprocess.call(command1, shell=True)
     if retcode < 0:
         error_msg = 'Child process was terminated by signal {0} (First initialisation step)'.format(retcode)
@@ -121,14 +127,13 @@ def runInitialSimulation2():
   ''' Run initial simulation (the second one) with provided value of lambda 
       @param[in] logger - python logger instance
   '''
-  logger.warning('TODO: input_file hardcoded in runInitialSimulation2')
   input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess2.i')
   command2 = '{exec_loc} --n-threads={nb_procs} '\
               '-i {input_i} Outputs/csv=true'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
                       input_i=input_file)
   try:
-    logger.info(command2)
+    logger.debug(command2)
     retcode = subprocess.call(command2, shell=True)
     if retcode < 0:
         error_msg = 'Child process was terminated by signal {0} (Second initialisation step)'.format(retcode)
@@ -138,6 +143,7 @@ def runInitialSimulation2():
 
 def parseCsvFile(csv_filename):
   ''' Parse csv file to extract latest value of lambda and max_temp '''
+  logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
   latest_max_temp = None
   index_column_lambda = None
@@ -146,34 +152,44 @@ def parseCsvFile(csv_filename):
     csvreader = csv.reader(csvfile)
     line_i = 0 # line index
     for row in csvreader:
-        if line_i == 0:
-          # Headers. Find the column "lambda"
-          headers = row
-          if 'lambda' in headers:
-            index_column_lambda = headers.index('lambda')
-          if 'max_temp' in headers:
-            index_column_max_temp = headers.index('max_temp')
-          continue
-        # Data line
-        if len(row) < len(headers):
-            break # finished reading all data
-        if index_column_lambda is not None:
-          latest_lambda = row[index_column_lambda]
-        if index_column_max_temp is not None:
-          latest_max_temp = row[index_column_max_temp]
+      if line_i == 0:
+        # Headers. Find the column "lambda"
+        headers = row
+        if 'lambda' in headers:
+          index_column_lambda = headers.index('lambda')
+        if 'max_temp' in headers:
+          index_column_max_temp = headers.index('max_temp')
         line_i += 1
-        continue # go to next data line
-  logger.info('Finished parsing csv file')
+        continue
+      # Data line
+      if len(row) < len(headers):
+          break # finished reading all data
+      if index_column_lambda is not None:
+        latest_lambda = float(row[index_column_lambda])
+      if index_column_max_temp is not None:
+        latest_max_temp = float(row[index_column_max_temp])
+      line_i += 1
+      continue # go to next data line
   return latest_lambda, latest_max_temp
+
+def writeResultsToCsvFile(results, step_index):
+  ''' Write results to S-curve csv file for give step 
+      @param[in] results - dictionary of results returned by runContinuation()
+      @step_index[in] - int, step index
+  '''
+  with open(parameters['result_curve_csv'], 'a') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    csvwriter.writerow([step_index, results[step_index][0], results[step_index][1]])
 
 def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation 
       @param[in] logger - python logger instance
   '''
+  logger.info('='*20+' Starting continuation... '+'='*20)
   found_error = checkAndCleanInputParameters(parameters, logger)
   if found_error:
     return
-  createRedbackFilesRequired(logger)
+  createRedbackFilesRequired(parameters, logger)
   initial_cwd = os.getcwd()
   os.chdir(parameters['running_dir'])
   # Pseudo arc-length continuation algorithm
@@ -184,21 +200,26 @@ def runContinuation(parameters, logger):
   ds = parameters['ds_initial']
   results = {} # key=step_index, value=[lambda. max_temp]
   
+  logger.info('Step {0} (first initial)'.format(step_index))
   runInitialSimulation1()
   lambda_old = parameters['lambda_initial_1']
   dummy, max_temp = parseCsvFile('extra_param_initial_guess1.csv')
   results[step_index] = [lambda_old, max_temp]
+  writeResultsToCsvFile(results, step_index)
   
   step_index += 1
+  logger.info('Step {0} (second initial)'.format(step_index))
   runInitialSimulation2()
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
   dummy, max_temp = parseCsvFile('extra_param_initial_guess2.csv')
   results[step_index] = [lambda_old, max_temp]
+  writeResultsToCsvFile(results, step_index)
   
   finished = False
   while not finished:
     step_index += 1
+    logger.info('Step {0}, s={1}'.format(step_index, s))
     ds_old = ds 
     logger.warning('TODO: what is the real value of ds for the first time???')
     ds = parameters['ds_initial']
@@ -223,7 +244,7 @@ def runContinuation(parameters, logger):
                         ds=ds, ds_old=ds_old, lambda_old_value=lambda_old, lambda_older_value=lambda_older,
                         lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
     try:
-      logger.info(command1)
+      logger.debug(command1)
       retcode = subprocess.call(command1, shell=True)
       if retcode < 0:
           error_msg = 'Child process was terminated by signal {0} (First initialisation step)'.format(retcode)
@@ -233,7 +254,6 @@ def runContinuation(parameters, logger):
     
     # update lambda_ic
     lambda_older = lambda_old
-    logger.warning('TODO: get max temp for first 3 simulations')
     if step_index > 2:
       lambda_old, max_temp = parseCsvFile('extra_param_iteration.csv')
     else:
@@ -241,7 +261,8 @@ def runContinuation(parameters, logger):
       lambda_old = parameters['lambda_initial_2']
       dummy, max_temp = parseCsvFile('extra_param_initial_guess2.csv')
     results[step_index] = [lambda_old, max_temp]
-
+    writeResultsToCsvFile(results, step_index)
+    
     # check if finished
     if (s > parameters['s_max']):
       finished = True
@@ -265,7 +286,8 @@ if __name__ == "__main__":
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
     'input_dir':'benchmark_1_T',
-    'running_dir':'running_tmp'
+    'running_dir':'running_tmp',
+    'result_curve_csv':'S_curve.csv'
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
