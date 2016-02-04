@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Input file for SuCCoMbe -->
+<Model>
+	<InitialConditions>
+		<!-- Strings that will be evaluated in [-1,1]^dim -->
+		<IC var='1'>0</IC> <!-- Constant pressure -->
+		<IC var='2'>0</IC> <!-- Constant temperature -->
+	</InitialConditions>
+	<BoundaryConditions>
+		<!-- Strings that will be evaluated on boundary of [-1,1]^dim -->
+		<BC var='1'>0</BC> <!-- Constant pressure -->
+		<BC var='2'>0</BC> <!-- Constant temperature -->
+	</BoundaryConditions>
+	<PreProcessingCode>
+		<!-- Ordered list of instructions to be run before the equations. In practise it is mainly used to define tmp variables used in equations -->
+		<!--command index='1'>R = 8.3144621; % J.mol^-1.K^-1
+    M_cao = 0.056; % kg/mol
+    Mcaco3 = 0.1; % kg/mol
+    Mco2 = 0.044; % kg/mol
+    rho_cao = 3.35e3; % kg/m3
+    rho_caco3 = 2.71e3; % kg/m3
+    rho_co2 = 1.e3; % kg/m3
+    phi0 = 0.03;
+    bb = (rho_cao*rho_co2)/(M_cao*Mco2)*(Mcaco3/rho_caco3);
+   
+    
+        % With Chemistry. See paper part I, appendix equation A4, B2
+        w_rel = eta2*Kc*exp(-(Ar_c-ArR)./((1+delta.*u{2})));
+        s = w_rel./(1+w_rel);
+        delta_phi_chem = (1-phi0)./(1 + eta1.*(1./s));
+        phi = phi0 + delta_phi_chem;
+         rhobar_s = (1.-s)*rho_caco3 + s*rho_cao;
+        rho_m = (1.-phi).*rhobar_s + phi*rho_co2;
+        q_z = ((3-2.*phi)./(phi.*(1.-phi))+(rhobar_s-rho_co2)./rho_m).*(D1*phi) ...
+            +(phi.*rho_co2*(rho_cao-rho_caco3)./(rhobar_s.*rho_m)).*(D1*s);</command-->
+       
+   <command index='1'>  
+        eta1 = 1e3;
+        eta2 = 1;
+        Kc = 5e4;
+        ArR=10;
+        phi0=0.1;
+        
+        w_rel = eta2*Kc.*exp(-(Ar_c-ArR)./((1+delta.*u{2})));
+        s = w_rel./(1+w_rel);
+        pchem = (1-phi0).*s./(s + eta1);
+        phi = phi0 + pchem;
+    </command>
+        <!--command index='1'></command-->
+	</PreProcessingCode>
+	<Equations>
+		<!-- Strings representing PDEs in matlab language, with user-defined equation parameters. -->
+		<dim>1</dim><!-- dimensionality of the problem -->
+		<EQ var='2'>D2*u{2} + Gr*exp(-u{1}.*exp_m).*exp((Ar_m*delta*u{2})./(1+delta*u{2})) - Da.*(1-phi).*(1-s).*exp(Ar_c*delta*u{2}./(1+delta*u{2}))</EQ>
+		<EQ var='1'>D2*u{1}/Le + mu.*(1-phi).*(1-s).*exp(Ar_c*delta*u{2}./(1+delta*u{2}))</EQ>
+	</Equations>
+	<EquationParameters>
+		<bifurcationParameter>Gr</bifurcationParameter>
+		<param>
+			<name>delta</name>
+			<value>1</value>
+		</param>
+		<param>
+			<name>Gr</name>
+			<value>0.105</value>
+		</param>
+		<param>
+			<name>mu</name>
+			<value>1e-3</value>
+		</param>
+        <param>
+			<name>Le</name>
+			<value>1</value>
+		</param>
+        <param>
+			<name>Da</name>
+			<value>1e-4</value>
+		</param>
+        		<param>
+			<name>Ar_m</name>
+			<value>10</value>
+		</param>
+        		<param>
+			<name>Ar_c</name>
+			<value>20</value>
+		</param>
+		<param>
+			<name>exp_m</name>
+			<value>4</value>
+		</param>
+	</EquationParameters>
+	<NumericalParameters>
+		<param>
+			<name>N</name>
+			<value>6</value>
+		</param>
+        <!-- Transient parameters -->
+		<param>
+			<name>startTime</name><!-- start of simulation time -->
+			<value>0.</value>
+		</param>
+		<param>
+			<name>finalTime</name><!-- end of simulation time -->
+			<value>50</value>
+		</param>
+		<param>
+			<name>restartFileNameT</name><!-- input Matlab .mat file -->
+			<value></value>
+		</param>
+		<param>
+			<name>saveFileNameT</name><!-- output Matlab .mat file -->
+			<value>exports/export.mat</value>
+		</param>
+		<param>
+			<name>solverRelTol</name><!-- relative tolerance for ode23s solver -->
+			<value>1.e-4</value>
+		</param>
+		<!-- Steady-state parameters -->
+		<param>
+			<name>restartFileNameSS</name><!-- input Matlab .mat file -->
+			<value></value><!-- SuCCoMBE_S.mat -->
+		</param>
+		<param>
+			<name>saveFileNameSS</name><!-- output Matlab .mat file -->
+			<value>SuCCoMBE_S.mat</value>
+		</param>
+		<param>
+			<name>LambdaInitialGuess</name> <!-- initial value of bifurc. param -->
+			<value>1e-10</value>
+		</param>
+		<param>
+			<name>sMax</name> <!-- Maximum curve length -->
+			<value>10</value>
+		</param>
+		<param>
+			<name>ds</name> <!-- continuation step size along curve -->
+			<value>0.01</value>
+		</param>
+		<param>
+			<name>indexVarPlot</name><!-- which variable to plot against the bifurcation parameter -->
+			<value>2</value>
+		</param>
+		<param>
+			<name>notificationFrequency</name><!-- percentage (0-100) of simulation when to notify progress -->
+			<value>10</value>
+		</param>
+	</NumericalParameters>
+</Model>
