@@ -1,0 +1,11 @@
+Chose manually 3 values of Gr and ran initial_guess simulations.
+
+ds  between point 2 (gr=1.7e-6) and point 3 (gr=3e-6) is
+ds = 0.026146068099760434
+
+ds_old between point 1 (gr=1e-6) and point 2 (gr=1.7e-6) is
+ds_old = 0.010300165599414025
+
+USING the temperature at the centre for norm
+
+Let's use those values to debug the iteration.i file...
