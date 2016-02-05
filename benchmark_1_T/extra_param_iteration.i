@@ -15,13 +15,13 @@
   [../]
   [./lambda]
     family = SCALAR
-    initial_condition = 2.4e-6 # 2*lambda_old - lambda_older
+    initial_condition = 9999 # to be set up by the continuation wrapper
   [../]
 []
 
 [GlobalParams]
-  ds = 1e-3 # 0.026146068099760434
-  ds_old = 1e-2 # 0.010300165599414025
+  ds = 99999 # will be overwritten by continuation wrapper
+  ds_old = 99999 # will be overwritten by continuation wrapper
 []
 
 [AuxVariables]
@@ -83,22 +83,10 @@
   [./directional_derivative]
     type = RedbackContinuationTangentAux
     variable = directional_derivative
-    sum_var_2_older = 0
-    sum_var_1_old = old_temp
-    sum_var_3_older = 0
-    sum_var_5_old = 0
-    sum_var_2_old = 0
-    sum_var_4_old = 0
-    sum_var_1 = temp
-    sum_var_older_1 = older_temp
-    sum_var_old_1 = old_temp
-    sum_var_4_older = 0
-    sum_var_6_old = 0
     nodes = '0 1 2 3 4 5 6 7 8 9 10'
-    sum_var_1_older = older_temp
-    sum_var_6_older = 0
-    sum_var_5_older = 0
-    sum_var_3_old = 0
+    sum_var_1 = temp
+    sum_var_old_1 = old_temp
+    sum_var_older_1 = older_temp
   [../]
 []
 
@@ -147,6 +135,7 @@
     ar_R = 1
     phi0 = 0.1
     da_endo = 1
+    gr = 1
     total_porosity = total_porosity
     continuation_parameter = lambda
   [../]
@@ -219,8 +208,37 @@
 
 [Executioner]
   type = Steady
-  petsc_options_iname = '-pc_type -pc_hypre_type'
-  petsc_options_value = 'hypre boomeramg'
+  #petsc_options_iname = '-pc_type -pc_hypre_type'
+  #petsc_options_value = 'hypre boomeramg'
+
+  l_tol = 1e-5
+  l_max_its = 1000
+  nl_rel_tol = 1e-5
+  nl_max_its = 50
+  nl_abs_tol = 1e-8 # 1e-50
+
+
+  #l_abs_step_tol = 1e-10 # -1
+  #nl_rel_step_tol = 1e-5 # 1e-50
+  #nl_abs_step_tol = 1e-10 # 1e-50
+[]
+
+[Preconditioning]
+  active = 'SMP'
+  [./SMP]
+    petsc_options = '-snes_monitor -snes_linesearch_monitor -ksp_monitor'
+    petsc_options_iname = '-ksp_type -pc_type -snes_atol -snes_rtol -snes_max_it -ksp_max_it -sub_pc_type -sub_pc_factor_shift_type'
+    petsc_options_value = 'gmres     asm      1E-10        1E-10      200         500          lu          NONZERO'
+    type = SMP
+    full = true
+  [../]
+  [./smp_precond]
+    type = SMP
+    full = true
+    #solve_type = NEWTON
+    petsc_options_iname = '-ksp_type -pc_type -snes_atol -snes_rtol -snes_max_it -ksp_atol -ksp_rtol'
+    petsc_options_value = 'gmres     bjacobi   1E-4      1E-5       10           1E-4       1E-5'
+  [../]
 []
 
 [Outputs]
@@ -232,11 +250,10 @@
 
 [ScalarKernels]
   [./continuation_kernel]
-    continuation_parameter_old = 1.7e-6
-    continuation_parameter_older = 1e-6
+    continuation_parameter_old = 99999 # overwritten by continuation wrapper
+    continuation_parameter_older = 99999 # overwritten by continuation wrapper
     directional_derivative = directional_derivative
     variable = lambda
     type = RedbackContinuation
   [../]
 []
-

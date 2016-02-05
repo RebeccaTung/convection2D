@@ -4,6 +4,9 @@
 
 import os, sys, random, logging, subprocess, shutil, math, csv
 from os.path import expanduser
+import numpy as np
+import pylab as P
+import matplotlib.pyplot as plt
 
 def getLogger(name, log_file='log.txt', level=logging.INFO):
     ''' Creates logger with given name and level.
@@ -76,7 +79,6 @@ def checkAndCleanInputParameters(parameters, logger):
   if not os.path.isdir(parameters['running_dir']):
     os.mkdir(parameters['running_dir'])
     logger.info('Created running directory "{0}"'.format(os.path.realpath(parameters['running_dir'])))
-    found_error = True
   # Check that all input folders and files exist
   exec_loc = parameters['exec_loc']
   tmp = [elt.strip() for elt in exec_loc.split('/')]
@@ -105,15 +107,17 @@ def checkAndCleanInputParameters(parameters, logger):
 
   return found_error
 
-def runInitialSimulation1():
+def runInitialSimulation1(parameters, logger):
   ''' Run initial simulation (the very first one) with provided value of lambda 
+      @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
   input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess1.i')
   command1 = '{exec_loc} --n-threads={nb_procs} '\
-              '-i {input_i} Outputs/csv=true'\
+              '-i {input_i} Outputs/csv=true '\
+              'Materials/adim_rock/gr={gr}'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file)
+                      input_i=input_file, gr=parameters['lambda_initial_1'])
   try:
     logger.debug(command1)
     retcode = subprocess.call(command1, shell=True)
@@ -123,15 +127,17 @@ def runInitialSimulation1():
   except:
         logger.error('Execution failed! (First initialisation step)')
 
-def runInitialSimulation2():
+def runInitialSimulation2(parameters, logger):
   ''' Run initial simulation (the second one) with provided value of lambda 
+      @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
   input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess2.i')
   command2 = '{exec_loc} --n-threads={nb_procs} '\
-              '-i {input_i} Outputs/csv=true'\
+              '-i {input_i} Outputs/csv=true '\
+              'Materials/adim_rock/gr={gr}'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file)
+                      input_i=input_file, gr=parameters['lambda_initial_2'])
   try:
     logger.debug(command2)
     retcode = subprocess.call(command2, shell=True)
@@ -179,7 +185,63 @@ def writeResultsToCsvFile(results, step_index):
   '''
   with open(parameters['result_curve_csv'], 'a') as csvfile:
     csvwriter = csv.writer(csvfile)
-    csvwriter.writerow([step_index, results[step_index][0], results[step_index][1]])
+    csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index][0]), 
+                        '{0:3.16e}'.format(results[step_index][1])])
+
+def plotSCurve(parameters, logger):
+  ''' Plot S-Curve 
+      @param[in] parameters - dictionary of input parameters
+      @param[in] logger - python logger instance
+  '''
+  # parse csv file with values to plot
+  logger.debug('Parsing csv file "{0}"'.format(parameters['result_curve_csv']))
+  lambda_vals = []
+  max_temp_vals = []
+  with open(parameters['result_curve_csv'], 'rb') as csvfile:
+    csvreader = csv.reader(csvfile)
+    line_i = 0 # line index
+    for row in csvreader:
+      if line_i == 0:
+        # Headers
+        line_i += 1
+        continue
+      # Data line
+      if len(row) < 3:
+          break # finished reading all data
+      lambda_vals.append(float(row[1]))
+      max_temp_vals.append(float(row[2]))
+      line_i += 1
+      continue # go to next data line
+  # plot
+  fig = plt.figure()
+  ax = fig.add_subplot(1,1,1)
+  
+  # Plot reference S-curve
+  if 1:
+    ref_x_values = []
+    ref_y_values = []
+    #import pdb;pdb.set_trace()
+    with open('/Users/pou036/projects/redback_applications/redback_continuation/ref.csv', 'rb') as csvfile:
+      csvreader = csv.reader(csvfile)
+      line_i = 0 # line index
+      for row in csvreader:
+        if len(row) < 2:
+            break # finished reading all data
+        ref_x_values.append(float(row[0]))
+        ref_y_values.append(float(row[1]))
+        line_i += 1
+        continue # go to next data line
+    
+  plt.xlabel('Continuation parameter', fontsize=20)
+  plt.ylabel('Norm of the solution', fontsize=20)
+
+  plt.plot(ref_x_values, ref_y_values,'r-x')
+  plt.hold(True)
+  x_values = np.array(lambda_vals)
+  y_values = np.array(max_temp_vals)
+  plt.plot(x_values, y_values,'-x', markerfacecolor='black', markeredgecolor='black',
+       markersize=12)
+  plt.show()
 
 def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation 
@@ -201,7 +263,7 @@ def runContinuation(parameters, logger):
   results = {} # key=step_index, value=[lambda. max_temp]
   
   logger.info('Step {0} (first initial)'.format(step_index))
-  runInitialSimulation1()
+  runInitialSimulation1(parameters, logger)
   lambda_old = parameters['lambda_initial_1']
   dummy, max_temp = parseCsvFile('extra_param_initial_guess1.csv')
   results[step_index] = [lambda_old, max_temp]
@@ -209,7 +271,7 @@ def runContinuation(parameters, logger):
   
   step_index += 1
   logger.info('Step {0} (second initial)'.format(step_index))
-  runInitialSimulation2()
+  runInitialSimulation2(parameters, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
   dummy, max_temp = parseCsvFile('extra_param_initial_guess2.csv')
@@ -217,14 +279,14 @@ def runContinuation(parameters, logger):
   writeResultsToCsvFile(results, step_index)
   
   finished = False
+  raw_input('About to start the first iterative step.\nPress any key to continue...')
   while not finished:
     step_index += 1
     logger.info('Step {0}, s={1}'.format(step_index, s))
     ds_old = ds 
     logger.warning('TODO: what is the real value of ds for the first time???')
-    ds = parameters['ds_initial']
+    ds = parameters['ds_initial']*step_index
     # run simulation
-    logger.warning('TODO: input_file hardcoded in runContinuation')
     input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration.i')
     logger.warning('TODO: fix nodes IDs in C++ code to get programmatically all the node IDs')
     lambda_ic = 2*lambda_old - lambda_older 
@@ -254,12 +316,7 @@ def runContinuation(parameters, logger):
     
     # update lambda_ic
     lambda_older = lambda_old
-    if step_index > 2:
-      lambda_old, max_temp = parseCsvFile('extra_param_iteration.csv')
-    else:
-      assert step_index == 2
-      lambda_old = parameters['lambda_initial_2']
-      dummy, max_temp = parseCsvFile('extra_param_initial_guess2.csv')
+    lambda_old, max_temp = parseCsvFile('extra_param_iteration.csv')
     results[step_index] = [lambda_old, max_temp]
     writeResultsToCsvFile(results, step_index)
     
@@ -269,6 +326,8 @@ def runContinuation(parameters, logger):
     # increment s
     ds = parameters['ds_initial']
     s += ds
+    plotSCurve(parameters, logger)
+    #raw_input('Press any key to continue...')
   
   # Finished, clean up
   os.chdir(initial_cwd)
@@ -279,8 +338,8 @@ if __name__ == "__main__":
   outpud_dir = '.'
   parameters = {
     'lambda_initial_1':1e-6,
-    'lambda_initial_2':1.7e-6,
-    'ds_initial':0.001,
+    'lambda_initial_2':2e-6,
+    'ds_initial':0.0001,
     's_max':1,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',

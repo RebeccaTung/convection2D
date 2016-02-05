@@ -93,7 +93,7 @@
     block = 0
     alpha_2 = 1
     ar = 10
-    gr = 1.7e-6 # 0.095*exp(-Ar), Ar=10
+    gr = 99999 # to be overwritten by continuation wrapper
     temperature = temp
     ar_F = 40
     ar_R = 1

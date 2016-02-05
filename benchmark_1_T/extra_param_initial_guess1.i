@@ -94,7 +94,7 @@
     alpha_2 = 1
     ar = 10
     pore_pres = 0
-    gr = 1e-6 # 0.095*exp(-Ar), Ar=10
+    gr = 99999 # to be overwritten by continuation wrapper
     temperature = temp
     ref_lewis_nb = 1
     ar_F = 40
