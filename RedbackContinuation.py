@@ -326,9 +326,9 @@ def runContinuation(parameters, logger):
     # increment s
     ds = parameters['ds_initial']
     s += ds
-    plotSCurve(parameters, logger)
+    
     #raw_input('Press any key to continue...')
-  
+  plotSCurve(parameters, logger)
   # Finished, clean up
   os.chdir(initial_cwd)
   return results
@@ -336,11 +336,12 @@ def runContinuation(parameters, logger):
 if __name__ == "__main__":
   # User input
   outpud_dir = '.'
+  ds = 1e-2
   parameters = {
-    'lambda_initial_1':1e-6,
-    'lambda_initial_2':2e-6,
-    'ds_initial':0.0001,
-    's_max':1,
+    'lambda_initial_1':ds,
+    'lambda_initial_2':2*ds,
+    'ds_initial':ds,
+    's_max':10,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
