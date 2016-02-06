@@ -4,9 +4,9 @@
 
 import os, sys, random, logging, subprocess, shutil, math, csv
 from os.path import expanduser
-import numpy as np
-import pylab as P
-import matplotlib.pyplot as plt
+
+from CheckMooseOutput import checkMooseOutput
+from PlotSCurve import plotSCurve
 
 def getLogger(name, log_file='log.txt', level=logging.INFO):
     ''' Creates logger with given name and level.
@@ -63,6 +63,13 @@ def checkAndCleanInputParameters(parameters, logger):
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
   params_int = ['nb_threads']
   params_str = ['exec_loc', 'input_dir', 'running_dir', 'result_curve_csv']
+  params_bool = ['plot_s_curve']
+  for param in params_real+params_int+params_str+params_bool:
+    if param not in parameters.keys():
+      logger.error('Input parameter "{0}={1}" should be an integer!'.format(param, parameters[param]))
+      found_error = True
+  if found_error:
+    return Ture
   for param in params_real:
     if not type(parameters[param]) in [float, int]:
       logger.error('Input parameter "{0}={1}" should be a number!'.format(param, parameters[param]))
@@ -74,6 +81,10 @@ def checkAndCleanInputParameters(parameters, logger):
   for param in params_str:
     if not type(parameters[param]) == str:
       logger.error('Input parameter "{0}={1}" should be a string!'.format(param, parameters[param]))
+      found_error = True
+  for param in params_bool:
+    if not type(parameters[param]) == bool:
+      logger.error('Input parameter "{0}={1}" should be a boolean!'.format(param, parameters[param]))
       found_error = True
   # Ensure that first two continuation parameter are sorted
   if not os.path.isdir(parameters['running_dir']):
@@ -120,12 +131,10 @@ def runInitialSimulation1(parameters, logger):
                       input_i=input_file, gr=parameters['lambda_initial_1'])
   try:
     logger.debug(command1)
-    retcode = subprocess.call(command1, shell=True)
-    if retcode < 0:
-        error_msg = 'Child process was terminated by signal {0} (First initialisation step)'.format(retcode)
-        logger.error(error_msg)
+    stdout = subprocess.check_output(command1.split())
+    checkMooseOutput(stdout, logger)
   except:
-        logger.error('Execution failed! (First initialisation step)')
+    logger.error('Execution failed! (First initialisation step)')
 
 def runInitialSimulation2(parameters, logger):
   ''' Run initial simulation (the second one) with provided value of lambda 
@@ -140,10 +149,8 @@ def runInitialSimulation2(parameters, logger):
                       input_i=input_file, gr=parameters['lambda_initial_2'])
   try:
     logger.debug(command2)
-    retcode = subprocess.call(command2, shell=True)
-    if retcode < 0:
-        error_msg = 'Child process was terminated by signal {0} (Second initialisation step)'.format(retcode)
-        logger.error(error_msg)
+    stdout = subprocess.check_output(command2.split())
+    checkMooseOutput(stdout, logger)
   except:
         logger.error('Execution failed! (Second initialisation step)')
 
@@ -188,12 +195,13 @@ def writeResultsToCsvFile(results, step_index):
     csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index][0]), 
                         '{0:3.16e}'.format(results[step_index][1])])
 
-def plotSCurve(parameters, logger):
-  ''' Plot S-Curve 
+def parseScurveCsv(parameters, logger):
+  ''' Parse S-curve csv file
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
+      @return lambda_vals - list of continuation values (float)
+      @return max_temp_vals - list of norms (float)
   '''
-  # parse csv file with values to plot
   logger.debug('Parsing csv file "{0}"'.format(parameters['result_curve_csv']))
   lambda_vals = []
   max_temp_vals = []
@@ -212,36 +220,7 @@ def plotSCurve(parameters, logger):
       max_temp_vals.append(float(row[2]))
       line_i += 1
       continue # go to next data line
-  # plot
-  fig = plt.figure()
-  ax = fig.add_subplot(1,1,1)
-  
-  # Plot reference S-curve
-  if 1:
-    ref_x_values = []
-    ref_y_values = []
-    #import pdb;pdb.set_trace()
-    with open('/Users/pou036/projects/redback_applications/redback_continuation/ref.csv', 'rb') as csvfile:
-      csvreader = csv.reader(csvfile)
-      line_i = 0 # line index
-      for row in csvreader:
-        if len(row) < 2:
-            break # finished reading all data
-        ref_x_values.append(float(row[0]))
-        ref_y_values.append(float(row[1]))
-        line_i += 1
-        continue # go to next data line
-    
-  plt.xlabel('Continuation parameter', fontsize=20)
-  plt.ylabel('Norm of the solution', fontsize=20)
-
-  plt.plot(ref_x_values, ref_y_values,'r-x')
-  plt.hold(True)
-  x_values = np.array(lambda_vals)
-  y_values = np.array(max_temp_vals)
-  plt.plot(x_values, y_values,'-x', markerfacecolor='black', markeredgecolor='black',
-       markersize=12)
-  plt.show()
+  return lambda_vals, max_temp_vals
 
 def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation 
@@ -279,12 +258,11 @@ def runContinuation(parameters, logger):
   writeResultsToCsvFile(results, step_index)
   
   finished = False
-  raw_input('About to start the first iterative step.\nPress any key to continue...')
+  #raw_input('About to start the first iterative step.\nPress any key to continue...')
   while not finished:
     step_index += 1
     logger.info('Step {0}, s={1}'.format(step_index, s))
     ds_old = ds 
-    logger.warning('TODO: what is the real value of ds for the first time???')
     ds = parameters['ds_initial']*step_index
     # run simulation
     input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration.i')
@@ -307,12 +285,10 @@ def runContinuation(parameters, logger):
                         lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
     try:
       logger.debug(command1)
-      retcode = subprocess.call(command1, shell=True)
-      if retcode < 0:
-          error_msg = 'Child process was terminated by signal {0} (First initialisation step)'.format(retcode)
-          logger.error(error_msg)
+      stdout = subprocess.check_output(command1.split())
+      checkMooseOutput(stdout, logger)
     except:
-          logger.error('Execution failed! (First initialisation step)')
+      logger.error('Execution failed! (Iteration step={0})'.format(step_index))
     
     # update lambda_ic
     lambda_older = lambda_old
@@ -327,8 +303,10 @@ def runContinuation(parameters, logger):
     ds = parameters['ds_initial']
     s += ds
     
+    if parameters['plot_s_curve']:
+      plotSCurve(parameters, logger)
     #raw_input('Press any key to continue...')
-  plotSCurve(parameters, logger)
+  
   # Finished, clean up
   os.chdir(initial_cwd)
   return results
@@ -341,13 +319,14 @@ if __name__ == "__main__":
     'lambda_initial_1':ds,
     'lambda_initial_2':2*ds,
     'ds_initial':ds,
-    's_max':10,
+    's_max':50,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
     'input_dir':'benchmark_1_T',
     'running_dir':'running_tmp',
-    'result_curve_csv':'S_curve.csv'
+    'result_curve_csv':'S_curve.csv',
+    'plot_s_curve':False
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
