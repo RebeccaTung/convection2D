@@ -50,8 +50,11 @@ def checkAndCleanInputParameters(parameters, logger):
   if type(parameters) != dict:
     logger.error('"parameters" must be of type dictionary, not {0}!'.format(type(parameters)))
     return True
-  all_keys = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'exec_loc',
-              'nb_threads', 'input_dir', 'running_dir', 'result_curve_csv']
+  params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
+  params_int = ['nb_threads']
+  params_str = ['exec_loc', 'input_dir', 'running_dir', 'result_curve_csv', 'ref_s_curve']
+  params_bool = ['plot_s_curve']
+  all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
   for param in all_keys:
     if not param in parameters.keys():
@@ -60,13 +63,9 @@ def checkAndCleanInputParameters(parameters, logger):
   if missing_param:
     return True
   # Ensure proper type of numerical parameters
-  params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
-  params_int = ['nb_threads']
-  params_str = ['exec_loc', 'input_dir', 'running_dir', 'result_curve_csv']
-  params_bool = ['plot_s_curve']
-  for param in params_real+params_int+params_str+params_bool:
-    if param not in parameters.keys():
-      logger.error('Input parameter "{0}={1}" should be an integer!'.format(param, parameters[param]))
+  for key in all_keys:
+    if key not in parameters.keys():
+      logger.error('Input parameter "{0}={1}" should be an integer!'.format(key, parameters[key]))
       found_error = True
   if found_error:
     return Ture
@@ -106,6 +105,10 @@ def checkAndCleanInputParameters(parameters, logger):
   if not os.path.isdir(parameters['input_dir']):
     logger.error('Input parameter "input_dir" does not point to an existing directory')
     found_error = True
+  if parameters['ref_s_curve']:
+    if not os.path.isfile(parameters['ref_s_curve']):
+      logger.error('Input parameter "ref_s_curve" does not point to an existing file')
+      found_error = True
   # replace directories with full path as we're going to change working directory
   parameters['input_dir'] = os.path.realpath(parameters['input_dir'])
   parameters['running_dir'] = os.path.realpath(parameters['running_dir'])
@@ -328,7 +331,8 @@ if __name__ == "__main__":
     'input_dir':'benchmark_1_T',
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
-    'plot_s_curve':False
+    'plot_s_curve':False,
+    'ref_s_curve':'benchmark_1_T/ref.csv'
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)

@@ -50,11 +50,11 @@ def plotSCurve(parameters, logger):
                       wspace=None, hspace=None)
   
   # Plot reference S-curve
-  if 1:
-    ref_x_values = []
-    ref_y_values = []
+  ref_x_values = []
+  ref_y_values = []
+  if 'ref_s_curve' in parameters and parameters['ref_s_curve']:
     #import pdb;pdb.set_trace()
-    with open('/Users/pou036/projects/redback_applications/redback_continuation/ref.csv', 'rb') as csvfile:
+    with open(parameters['ref_s_curve'], 'rb') as csvfile:
       csvreader = csv.reader(csvfile)
       line_i = 0 # line index
       for row in csvreader:
@@ -93,5 +93,9 @@ def plotSCurve(parameters, logger):
   plt.show()
 
 if __name__ == "__main__":
-  plotSCurve({'result_curve_csv':'S_curve.csv'}, logging.getLogger('plotSCurve'))
+  parameters = {
+    'result_curve_csv':'S_curve.csv',
+    'ref_s_curve':'benchmark_1_T/ref.csv'
+  }
+  plotSCurve(parameters, logging.getLogger('plotSCurve'))
   print 'Finished'
