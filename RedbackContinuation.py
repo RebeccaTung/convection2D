@@ -135,6 +135,7 @@ def runInitialSimulation1(parameters, logger):
     checkMooseOutput(stdout, logger)
   except:
     logger.error('Execution failed! (First initialisation step)')
+    sys.exit(1)
 
 def runInitialSimulation2(parameters, logger):
   ''' Run initial simulation (the second one) with provided value of lambda 
@@ -152,7 +153,8 @@ def runInitialSimulation2(parameters, logger):
     stdout = subprocess.check_output(command2.split())
     checkMooseOutput(stdout, logger)
   except:
-        logger.error('Execution failed! (Second initialisation step)')
+    logger.error('Execution failed! (Second initialisation step)')
+    sys.exit(1)
 
 def parseCsvFile(csv_filename):
   ''' Parse csv file to extract latest value of lambda and max_temp '''
@@ -289,7 +291,7 @@ def runContinuation(parameters, logger):
       checkMooseOutput(stdout, logger)
     except:
       logger.error('Execution failed! (Iteration step={0})'.format(step_index))
-    
+      sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
     lambda_old, max_temp = parseCsvFile('extra_param_iteration.csv')

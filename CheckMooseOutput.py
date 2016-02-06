@@ -2,6 +2,9 @@
 
 import os, sys, logging
 
+class MooseException(Exception):
+  pass
+
 def checkMooseOutput(stdout, logger):
   ''' Check string containing moose's stdout output from simulation.
       Raise Exception if string shows simulation failed.
@@ -15,13 +18,24 @@ def checkMooseOutput(stdout, logger):
       print line
   # Check for errors
   error = False
-  logger.warning('TODO: checkMooseOutput to be implemented and tested')
-  #import pdb;pdb.set_trace()
+  ### Known error case 1: 'Aborting as solve did not converge'
+  # Find last non-empty line
+  index = len(lines) - 1
+  last_line = ''
+  while index > -1:
+    if lines[index].strip() is not '':
+      last_line = lines[index]
+      break
+    index -= 1
+  if last_line is not '':
+    if last_line.lower().strip() == 'aborting as solve did not converge':
+      error = True
+  
   if error:
     for line in lines:
       print line
     logger.error('Simulation failed\n' + '\n'.join(lines[-5:-1]))
-    return 1
+    raise MooseException('Simulation did not converge')
   return 0
 
 if __name__ == "__main__":
