@@ -3,6 +3,7 @@
 import os, sys, logging, unittest
 
 from CheckMooseOutput import checkMooseOutput, MooseException
+from MooseInputFileRW import MooseInputFileRW
 
 STRING1 = '''
 Postprocessor Values:
@@ -37,18 +38,13 @@ Aborting as solve did not converge
 
 '''
 
-class NullHandler(logging.Handler):
-  def emit(self, record):
-    pass
+from Utils import NullHandler, getLogger
 
 class TestStringMethods(unittest.TestCase):
 
   def setUp(self):
     ''' Initial set up for all tests '''
-    self.logger = logging.getLogger('tests')
-    self.logger.setLevel(logging.INFO)
-    h = NullHandler()
-    self.logger.addHandler(h)
+    self.logger = getLogger('log.txt', level=logging.INFO)
   
   def tearDown(self):
     ''' Clean up function called after each test '''
@@ -58,8 +54,36 @@ class TestStringMethods(unittest.TestCase):
     self.assertEqual(checkMooseOutput(STRING1, self.logger), 0)
 
   def test_checkMooseOutputNoConvergence1(self):
-    #self.assertEqual(checkMooseOutput(STRING2, self.logger), 1)
     self.assertRaises(MooseException, checkMooseOutput, STRING2, self.logger)
+  
+  def test_mooseInputFileRW(self):
+    handler = MooseInputFileRW()
+    #handler.logger.setLevel(logging.DEBUG)
+    filename_in = os.path.join('tests', 'bench1_a.i')
+    filename_out = os.path.join('tests', 'bench1_a_recreated.i')
+    data = handler.read(filename_in)
+    handler.write(data, filename_out)
+    with open(filename_in, 'r') as f_1:
+      file_content_1 = f_1.read()
+    with open(filename_out, 'r') as f_2:
+      file_content_2 = f_2.read()
+    self.assertMultiLineEqual(file_content_1, file_content_2, 
+                              msg='Problem with MooseInputFileRW')
+  
+  def assertMultiLineEqual(self, first, second, msg=None):
+    ''' Assert that two multi-line strings are equal.
+        If they aren't, show a nice diff.
+        See http://stackoverflow.com/questions/3942820/how-to-do-unit-testing-of-functions-writing-files-using-python-unittest
+    '''
+    self.assertTrue(isinstance(first, str), 'First argument is not a string')
+    self.assertTrue(isinstance(second, str), 'Second argument is not a string')
+    if first != second:
+      message = ''.join(difflib.ndiff(first.splitlines(True),
+                                      second.splitlines(True)))
+      if msg:
+        message += ' : ' + msg
+      self.fail('Multi-line strings are unequal:\n' + message)
+
 
 if __name__ == "__main__":
   #unittest.main()

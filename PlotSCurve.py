@@ -7,6 +7,8 @@ import pylab as P
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 
+from Utils import getLogger
+
 def parseScurveCsv(parameters, logger):
   ''' Parse S-curve csv file
       @param[in] parameters - dictionary of input parameters
@@ -97,5 +99,5 @@ if __name__ == "__main__":
     'result_curve_csv':'S_curve.csv',
     'ref_s_curve':'benchmark_1_T/ref.csv'
   }
-  plotSCurve(parameters, logging.getLogger('plotSCurve'))
+  plotSCurve(parameters, getLogger('plotSCurve', level=logging.INFO))
   print 'Finished'
