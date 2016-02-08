@@ -91,6 +91,7 @@ def checkAndCleanInputParameters(parameters, logger):
     if not os.path.isfile(parameters['ref_s_curve']):
       logger.error('Input parameter "ref_s_curve" does not point to an existing file')
       found_error = True
+    parameters['ref_s_curve'] = os.path.realpath(parameters['ref_s_curve'])
   # replace directories with full path as we're going to change working directory
   parameters['input_dir'] = os.path.realpath(parameters['input_dir'])
   parameters['running_dir'] = os.path.realpath(parameters['running_dir'])
@@ -306,7 +307,7 @@ if __name__ == "__main__":
     'lambda_initial_1':ds,
     'lambda_initial_2':2*ds,
     'ds_initial':ds,
-    's_max':50,
+    's_max':1,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
