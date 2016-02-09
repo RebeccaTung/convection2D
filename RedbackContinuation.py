@@ -1,4 +1,4 @@
-''' Script to run Redback continuation. 
+''' Script to run Redback continuation.
   TODO: everything...
 '''
 
@@ -10,7 +10,7 @@ from CheckMooseOutput import checkMooseOutput
 from PlotSCurve import plotSCurve
 
 def createRedbackFilesRequired(parameters, logger):
-  ''' Create Redback files required to run continuation 
+  ''' Create Redback files required to run continuation
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
@@ -22,9 +22,9 @@ def createRedbackFilesRequired(parameters, logger):
   logger.warning('TODO: createRedbackFilesRequired not implemented')
 
 def checkAndCleanInputParameters(parameters, logger):
-  ''' Check input parameters provided by user 
+  ''' Check input parameters provided by user
       @param[in] parameters - dictionary of input parameters
-      @param[in] logger - python logger instance  
+      @param[in] logger - python logger instance
       @return: found_error - boolean, True if any error was found
   '''
   found_error = False
@@ -105,7 +105,7 @@ def checkAndCleanInputParameters(parameters, logger):
   return found_error
 
 def runInitialSimulation1(parameters, logger):
-  ''' Run initial simulation (the very first one) with provided value of lambda 
+  ''' Run initial simulation (the very first one) with provided value of lambda
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
@@ -124,7 +124,7 @@ def runInitialSimulation1(parameters, logger):
     sys.exit(1)
 
 def runInitialSimulation2(parameters, logger):
-  ''' Run initial simulation (the second one) with provided value of lambda 
+  ''' Run initial simulation (the second one) with provided value of lambda
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
@@ -143,12 +143,16 @@ def runInitialSimulation2(parameters, logger):
     sys.exit(1)
 
 def parseCsvFile(csv_filename):
-  ''' Parse csv file to extract latest value of lambda and max_temp '''
+  ''' Parse csv file to extract latest value of lambda, max_temp
+      and L2_norm_u_diff
+  '''
   logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
   latest_max_temp = None
+  latest_L2norm = None
   index_column_lambda = None
   index_column_max_temp = None
+  index_L2norm = None
   with open(csv_filename, 'rb') as csvfile:
     csvreader = csv.reader(csvfile)
     line_i = 0 # line index
@@ -160,6 +164,8 @@ def parseCsvFile(csv_filename):
           index_column_lambda = headers.index('lambda')
         if 'max_temp' in headers:
           index_column_max_temp = headers.index('max_temp')
+        if 'L2_norm_u_diff' in headers:
+          index_L2norm = headers.index('L2_norm_u_diff')
         line_i += 1
         continue
       # Data line
@@ -169,18 +175,20 @@ def parseCsvFile(csv_filename):
         latest_lambda = float(row[index_column_lambda])
       if index_column_max_temp is not None:
         latest_max_temp = float(row[index_column_max_temp])
+      if index_L2norm is not None:
+        latest_L2norm = float(row[index_L2norm])
       line_i += 1
       continue # go to next data line
-  return latest_lambda, latest_max_temp
+  return latest_lambda, latest_max_temp, latest_L2norm
 
 def writeResultsToCsvFile(results, step_index):
-  ''' Write results to S-curve csv file for give step 
+  ''' Write results to S-curve csv file for give step
       @param[in] results - dictionary of results returned by runContinuation()
       @step_index[in] - int, step index
   '''
   with open(parameters['result_curve_csv'], 'a') as csvfile:
     csvwriter = csv.writer(csvfile)
-    csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index][0]), 
+    csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index][0]),
                         '{0:3.16e}'.format(results[step_index][1])])
 
 def parseScurveCsv(parameters, logger):
@@ -211,7 +219,7 @@ def parseScurveCsv(parameters, logger):
   return lambda_vals, max_temp_vals
 
 def runContinuation(parameters, logger):
-  ''' Master function to run pseudo arc-length continuation 
+  ''' Master function to run pseudo arc-length continuation
       @param[in] logger - python logger instance
   '''
   logger.info('='*20+' Starting continuation... '+'='*20)
@@ -226,32 +234,33 @@ def runContinuation(parameters, logger):
   step_index = 0
   lambda_old = 0
   lambda_older = 0
+  sol_l2norm = 0
   ds = parameters['ds_initial']
   results = {} # key=step_index, value=[lambda. max_temp]
-  
+
   logger.info('Step {0} (first initial)'.format(step_index))
   runInitialSimulation1(parameters, logger)
   lambda_old = parameters['lambda_initial_1']
-  dummy, max_temp = parseCsvFile('extra_param_initial_guess1.csv')
+  dummy, max_temp, dummy2 = parseCsvFile('extra_param_initial_guess1.csv')
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
-  
+
   step_index += 1
   logger.info('Step {0} (second initial)'.format(step_index))
   runInitialSimulation2(parameters, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
-  dummy, max_temp = parseCsvFile('extra_param_initial_guess2.csv')
+  dummy, max_temp, dummy2 = parseCsvFile('extra_param_initial_guess2.csv')
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
-  
+
   finished = False
   #raw_input('About to start the first iterative step.\nPress any key to continue...')
   while not finished:
     step_index += 1
     logger.info('Step {0}, s={1}'.format(step_index, s))
-    ds_old = ds 
-    ds = parameters['ds_initial']*step_index
+    ds_old = ds
+    ds = parameters['ds_initial'] #*step_index
     # run simulation
     input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration.i')
     logger.warning('TODO: fix nodes IDs in C++ code to get programmatically all the node IDs')
@@ -265,6 +274,7 @@ def runContinuation(parameters, logger):
                 'GlobalParams/ds={ds} GlobalParams/ds_old={ds_old} '\
                 'ScalarKernels/continuation_kernel/continuation_parameter_old={lambda_old_value} '\
                 'ScalarKernels/continuation_kernel/continuation_parameter_older={lambda_older_value} '\
+                'Mesh/file={previous_exodus} '\
                 'UserObjects/old_temp_UO/mesh={previous_exodus} '\
                 'UserObjects/older_temp_UO/mesh={previous_exodus} '\
                 .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
@@ -279,22 +289,28 @@ def runContinuation(parameters, logger):
       logger.error('Execution failed! (Iteration step={0})'.format(step_index))
       sys.exit(1)
     # update lambda_ic
+    lambda_test = lambda_older #storing lambda_older to use it for the ds external calculation
     lambda_older = lambda_old
-    lambda_old, max_temp = parseCsvFile('extra_param_iteration.csv')
+    lambda_old, max_temp, sol_l2norm = parseCsvFile('extra_param_iteration.csv')
     results[step_index] = [lambda_old, max_temp]
     writeResultsToCsvFile(results, step_index)
-    
+
+    if 1:
+        # Compute ds externally for comparison
+        ds2 = math.sqrt(sol_l2norm**2 + (lambda_older - lambda_test)**2)
+        logger.info('  ds (set) = {0}, ds (recomputed) = {1}, sol_l2norm = {2}, ratio={3}, ds_old={4}'.format(ds, ds2, sol_l2norm, ds/ds2, ds_old))
+
     # check if finished
     if (s > parameters['s_max']):
       finished = True
     # increment s
     ds = parameters['ds_initial']
     s += ds
-    
+
     if parameters['plot_s_curve']:
       plotSCurve(parameters, logger)
     #raw_input('Press any key to continue...')
-  
+
   # Finished, clean up
   os.chdir(initial_cwd)
   return results
@@ -304,8 +320,8 @@ if __name__ == "__main__":
   outpud_dir = '.'
   ds = 1e-2
   parameters = {
-    'lambda_initial_1':ds,
-    'lambda_initial_2':2*ds,
+    'lambda_initial_1':1e-2,
+    'lambda_initial_2':2e-2,
     'ds_initial':ds,
     's_max':1,
     # Numerical parameters
