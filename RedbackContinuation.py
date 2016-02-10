@@ -250,7 +250,7 @@ def runContinuation(parameters, logger):
   runInitialSimulation2(parameters, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
-  dummy, max_temp, dummy2 = parseCsvFile('extra_param_initial_guess2.csv')
+  dummy, max_temp, sol_l2norm = parseCsvFile('extra_param_initial_guess2.csv')
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
 
@@ -260,11 +260,12 @@ def runContinuation(parameters, logger):
     step_index += 1
     logger.info('Step {0}, s={1}'.format(step_index, s))
     ds_old = ds
+    ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
     ds = parameters['ds_initial'] #*step_index
     # run simulation
-    input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration.i')
+    input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration_L2norm_sot.i')
     logger.warning('TODO: fix nodes IDs in C++ code to get programmatically all the node IDs')
-    lambda_ic = 2*lambda_old - lambda_older 
+    lambda_ic = 2*lambda_old - lambda_older
     previous_exodus_filename = 'extra_param_initial_guess2.e'
     if step_index > 2:
       previous_exodus_filename = 'extra_param_iteration.e'
@@ -279,7 +280,7 @@ def runContinuation(parameters, logger):
                 'UserObjects/older_temp_UO/mesh={previous_exodus} '\
                 .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
                         input_i=input_file, mesh_file='extra_param_initial_guess2.e', # TODO: previous exodus file
-                        ds=ds, ds_old=ds_old, lambda_old_value=lambda_old, lambda_older_value=lambda_older,
+                        ds=ds, ds_old=ds_old_recomputed, lambda_old_value=lambda_old, lambda_older_value=lambda_older,
                         lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
     try:
       logger.debug(command1)
@@ -289,7 +290,6 @@ def runContinuation(parameters, logger):
       logger.error('Execution failed! (Iteration step={0})'.format(step_index))
       sys.exit(1)
     # update lambda_ic
-    lambda_test = lambda_older #storing lambda_older to use it for the ds external calculation
     lambda_older = lambda_old
     lambda_old, max_temp, sol_l2norm = parseCsvFile('extra_param_iteration.csv')
     results[step_index] = [lambda_old, max_temp]
@@ -297,8 +297,7 @@ def runContinuation(parameters, logger):
 
     if 1:
         # Compute ds externally for comparison
-        ds2 = math.sqrt(sol_l2norm**2 + (lambda_older - lambda_test)**2)
-        logger.info('  ds (set) = {0}, ds (recomputed) = {1}, sol_l2norm = {2}, ratio={3}, ds_old={4}'.format(ds, ds2, sol_l2norm, ds/ds2, ds_old))
+        logger.info('  ds (set) = {0}, sol_l2norm = {1}, ds_old={2}'.format(ds, sol_l2norm, ds_old))
 
     # check if finished
     if (s > parameters['s_max']):
@@ -323,7 +322,7 @@ if __name__ == "__main__":
     'lambda_initial_1':1e-2,
     'lambda_initial_2':2e-2,
     'ds_initial':ds,
-    's_max':1,
+    's_max':0.2,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,

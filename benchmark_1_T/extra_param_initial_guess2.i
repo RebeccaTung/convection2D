@@ -28,6 +28,8 @@
   [./old_temp]
     initial_from_file_var = temp
   [../]
+  [./u_diff_auxvar]
+  [../]
 []
 
 [Kernels]
@@ -50,6 +52,13 @@
   [./total_porosity]
     type = RedbackTotalPorosityAux
     variable = total_porosity
+  [../]
+  [./u_diff_auxkernel]
+    type = RedbackDiffVarsAux
+    variable = u_diff_auxvar
+    variable_2 = old_temp
+    variable_1 = temp
+    execute_on = timestep_end
   [../]
 []
 
@@ -104,9 +113,17 @@
 []
 
 [Postprocessors]
-  active = 'temp_pt_1 temp_pt_0 temp_pt_3 temp_pt_2 temp_pt_5 temp_pt_4 max_temp'
+  active = 'L2_norm_u_diff L2_norm_u temp_pt_1 temp_pt_0 temp_pt_3 temp_pt_2 temp_pt_5 temp_pt_4 max_temp'
   [./max_temp]
     type = NodalMaxValue
+    variable = temp
+  [../]
+  [./L2_norm_u_diff]
+    type = NodalL2Norm
+    variable = u_diff_auxvar
+  [../]
+  [./L2_norm_u]
+    type = NodalL2Norm
     variable = temp
   [../]
   [./middle_temp]

@@ -107,9 +107,13 @@
 []
 
 [Postprocessors]
-  active = 'temp_pt_0 temp_pt_1 temp_pt_2 temp_pt_3 temp_pt_4 temp_pt_5 max_temp'
+  active = 'L2_norm_u temp_pt_0 temp_pt_1 temp_pt_2 temp_pt_3 temp_pt_4 temp_pt_5 max_temp'
   [./max_temp]
     type = NodalMaxValue
+    variable = temp
+  [../]
+  [./L2_norm_u]
+    type = NodalL2Norm
     variable = temp
   [../]
   [./middle_temp]

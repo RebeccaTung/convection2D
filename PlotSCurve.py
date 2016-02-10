@@ -37,7 +37,7 @@ def parseScurveCsv(parameters, logger):
   return lambda_vals, max_temp_vals
 
 def plotSCurve(parameters, logger):
-  ''' Plot S-Curve 
+  ''' Plot S-Curve
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
@@ -50,7 +50,7 @@ def plotSCurve(parameters, logger):
   ax = fig.add_subplot(1,1,1)
   plt.subplots_adjust(left=0.1, bottom=0.15, right=0.97, top=0.95,
                       wspace=None, hspace=None)
-  
+
   # Plot reference S-curve
   ref_x_values = []
   ref_y_values = []
@@ -66,7 +66,7 @@ def plotSCurve(parameters, logger):
         ref_y_values.append(float(row[1]))
         line_i += 1
         continue # go to next data line
-    
+
   plt.xlabel('Continuation parameter', fontsize=20)
   plt.ylabel('Norm of the solution', fontsize=20)
 
@@ -76,7 +76,7 @@ def plotSCurve(parameters, logger):
   y_values = np.array(max_temp_vals)
   plt.plot(x_values, y_values,'-x', markerfacecolor='black', markeredgecolor='black',
            markersize=12)
-  
+
   def reload(event):
     ''' Function to reload curves '''
     lambda_vals, max_temp_vals = parseScurveCsv(parameters, logger)
@@ -90,8 +90,9 @@ def plotSCurve(parameters, logger):
     P.hold(False)
     plt.draw()
     print 'Reloaded {0} with {1} data points'.format(parameters['result_curve_csv'], len(x_values))
-  
+
   reload_button.on_clicked(reload)
+  #plt.axes().set_aspect('equal', 'datalim')
   plt.show()
 
 if __name__ == "__main__":
