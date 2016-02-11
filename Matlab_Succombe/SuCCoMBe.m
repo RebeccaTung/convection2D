@@ -653,10 +653,14 @@ end
 function y = Funct(x,ds,solz,solf,N,nb_vars,dim,bcs,equations,ppcs,...
     indices_interior,boundary_mask,D1,D2,L)
     % Arclength continuation function
+    % Calculation of ds for the previous step. This is relevant because 
+    % the initial ds depends on the given initial guesses
+    ds_old = norm(solf-solz);
+    %ds_old = ds;
     y = Func(x,x(nb_vars*(N-1)^dim+1),...
         N,nb_vars,bcs,equations,ppcs,dim,indices_interior,boundary_mask,...
         D1,D2,L);
-    y(nb_vars*(N-1)^dim+1) = (sum((x - solf).*conj(solf-solz))/ds)-ds;
+    y(nb_vars*(N-1)^dim+1) = (sum((x - solf).*conj(solf-solz))/ds_old)-ds;
     return
 end
 
