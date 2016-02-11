@@ -290,7 +290,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
   all_scalarkernels_names = [elt['name'] for elt in scalarkernels['children']]
   assert 'continuation_kernel' not in all_scalarkernels_names
   scalarkernels['children'].append({
-    'name':'u_old',
+    'name':'continuation_kernel',
     'children':[],
     'comments':[],
     'attributes':[{'name':'type','value':'RedbackContinuation', 'comment':''},
@@ -349,6 +349,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
     'attributes':[
       {'name':'type','value':'RedbackContinuationTangentAux', 'comment':''},
       {'name':'variable','value':'directional_derivative', 'comment':''},
+      {'name':'nodes','value':'9999', 'comment':'irrelevant value, overwritten by C++ code'},
       {'name':'sum_var_1','value':'temp', 'comment':''},
       {'name':'sum_var_old_1','value':'old_temp', 'comment':''},
       {'name':'sum_var_older_1','value':'older_temp', 'comment':''}

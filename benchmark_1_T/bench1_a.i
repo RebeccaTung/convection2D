@@ -120,10 +120,15 @@
 []
 
 [Executioner]
+  # petsc_options_iname = '-pc_type -pc_hypre_type'
+  # petsc_options_value = 'hypre boomeramg'
   type = Transient
+  l_tol = 1e-15
+  l_max_its = 1000
+  nl_rel_tol = 1e-15
+  nl_max_its = 50
+  nl_abs_tol = 1e-15 # 1e-50
   num_steps = 10000
-  petsc_options_iname = '-pc_type -pc_hypre_type'
-  petsc_options_value = 'hypre boomeramg'
   ss_check_tol = 1e-6
   end_time = 10
   dtmax = 0.1
