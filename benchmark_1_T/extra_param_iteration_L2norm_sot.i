@@ -6,7 +6,6 @@
 
 [Variables]
   [./temp]
-    # 0.03276648
     [./InitialCondition]
       function = initial_solution
       type = FunctionIC
@@ -20,8 +19,8 @@
 []
 
 [GlobalParams]
-  ds = 99999 # will be overwritten by continuation wrapper
-  ds_old = 99999 # will be overwritten by continuation wrapper
+  ds = 9999 # will be overwritten by continuation wrapper
+  ds_old = 9999 # will be overwritten by continuation wrapper
 []
 
 [AuxVariables]
@@ -54,7 +53,7 @@
   [./initial_solution]
     type = LinearCombinationFunction
     functions = 'u_old u_older'
-    w = '2  -1'
+    w = '2 -1'
   [../]
 []
 

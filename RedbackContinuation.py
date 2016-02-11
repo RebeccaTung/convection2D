@@ -2,15 +2,19 @@
   TODO: everything...
 '''
 
-import os, sys, random, logging, subprocess, shutil, math, csv
+import os, sys, random, logging, subprocess, shutil, math, csv, copy
 from os.path import expanduser
 
 from Utils import getLogger
 from CheckMooseOutput import checkMooseOutput
 from PlotSCurve import plotSCurve
+from MooseInputFileRW import MooseInputFileRW
+from GenerateInputFiles import writeInitialGuessFile, writeIterationFile, \
+  SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME
 
 def createRedbackFilesRequired(parameters, logger):
-  ''' Create Redback files required to run continuation
+  ''' Create Redback files required to run continuation 
+      Updates parameters dictionary
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
@@ -18,13 +22,38 @@ def createRedbackFilesRequired(parameters, logger):
   with open(parameters['result_curve_csv'], 'wb') as csvfile:
     csvwriter = csv.writer(csvfile)
     csvwriter.writerow(['step', 'lambda', 'norm'])
-  # Create other input files
-  logger.warning('TODO: createRedbackFilesRequired not implemented')
+  # Check that our reader/writer can reproduce that input file faithfully
+  filename_in = parameters['input_file']
+  root, ext = os.path.splitext(filename_in)
+  assert ext == '.i'
+  filename_out = os.path.join(parameters['running_dir'], 'input_recreated.i')
+  handler = MooseInputFileRW()
+  data_sim = handler.read(filename_in)
+  handler.write(data_sim, filename_out)
+  with open(filename_in, 'r') as f_1:
+    file_content_1 = f_1.read()
+  with open(filename_out, 'r') as f_2:
+    file_content_2 = f_2.read()
+  if file_content_1 != file_content_2:
+    error_msg = 'Reader/writer did not reproduce exactly the input file "{0}". '.format(filename_in)
+    error_msg += 'Check manually if this is acceptable and overwrite this error message if necessary.'
+    raise Exception, error_msg
+  else:
+    logger.debug('Our reader/writer successfully read and wrote the input file')
+  # Create 3 simulation files (IG1, IG1, iteration)
+  parameters['input_IG1'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG1_NAME))
+  parameters['input_IG2'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
+  parameters['input_iteration'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
+  # First initial guess
+  sim_1 = writeInitialGuessFile(1, data_sim, parameters['input_IG1'], handler, logger)
+  sim_2 = writeInitialGuessFile(2, data_sim, parameters['input_IG2'], handler, logger)
+  sim_i = writeIterationFile(data_sim, parameters['input_iteration'], handler, logger)
 
 def checkAndCleanInputParameters(parameters, logger):
   ''' Check input parameters provided by user
       @param[in] parameters - dictionary of input parameters
-      @param[in] logger - python logger instance
+      @param[in] logger - python logger instance  
+      @param[in] handler - instance of MooseInputFileRW
       @return: found_error - boolean, True if any error was found
   '''
   found_error = False
@@ -34,7 +63,7 @@ def checkAndCleanInputParameters(parameters, logger):
     return True
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
   params_int = ['nb_threads']
-  params_str = ['exec_loc', 'input_dir', 'running_dir', 'result_curve_csv', 'ref_s_curve']
+  params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve']
   params_bool = ['plot_s_curve']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
@@ -84,8 +113,8 @@ def checkAndCleanInputParameters(parameters, logger):
   if not os.path.isfile(exec_loc):
     logger.error('Input parameter "exec_loc" does not point to an existing Redback executable')
     found_error = True
-  if not os.path.isdir(parameters['input_dir']):
-    logger.error('Input parameter "input_dir" does not point to an existing directory')
+  if not os.path.isfile(parameters['input_file']):
+    logger.error('Input parameter "input_file" does not point to an existing file')
     found_error = True
   if parameters['ref_s_curve']:
     if not os.path.isfile(parameters['ref_s_curve']):
@@ -93,7 +122,7 @@ def checkAndCleanInputParameters(parameters, logger):
       found_error = True
     parameters['ref_s_curve'] = os.path.realpath(parameters['ref_s_curve'])
   # replace directories with full path as we're going to change working directory
-  parameters['input_dir'] = os.path.realpath(parameters['input_dir'])
+  parameters['input_file'] = os.path.realpath(parameters['input_file'])
   parameters['running_dir'] = os.path.realpath(parameters['running_dir'])
   parameters['exec_loc'] = os.path.realpath(exec_loc)
   parameters['result_curve_csv'] = os.path.realpath(parameters['result_curve_csv'])
@@ -109,7 +138,7 @@ def runInitialSimulation1(parameters, logger):
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
-  input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess1.i')
+  input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG1_NAME))
   command1 = '{exec_loc} --n-threads={nb_procs} '\
               '-i {input_i} Outputs/csv=true '\
               'Materials/adim_rock/gr={gr}'\
@@ -128,7 +157,7 @@ def runInitialSimulation2(parameters, logger):
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
-  input_file = os.path.join(parameters['input_dir'], 'extra_param_initial_guess2.i')
+  input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
   command2 = '{exec_loc} --n-threads={nb_procs} '\
               '-i {input_i} Outputs/csv=true '\
               'Materials/adim_rock/gr={gr}'\
@@ -148,10 +177,10 @@ def parseCsvFile(csv_filename):
   '''
   logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
-  latest_max_temp = None
+  latest_sol_norm = None
   latest_L2norm = None
   index_column_lambda = None
-  index_column_max_temp = None
+  index_column_sol_norm = None
   index_L2norm = None
   with open(csv_filename, 'rb') as csvfile:
     csvreader = csv.reader(csvfile)
@@ -162,10 +191,10 @@ def parseCsvFile(csv_filename):
         headers = row
         if 'lambda' in headers:
           index_column_lambda = headers.index('lambda')
-        if 'max_temp' in headers:
-          index_column_max_temp = headers.index('max_temp')
-        if 'L2_norm_u_diff' in headers:
-          index_L2norm = headers.index('L2_norm_u_diff')
+        if 'solution_norm' in headers:
+          index_column_sol_norm = headers.index('solution_norm')
+        if 'L2_norm_u' in headers:
+          index_L2norm = headers.index('L2_norm_u')
         line_i += 1
         continue
       # Data line
@@ -173,13 +202,13 @@ def parseCsvFile(csv_filename):
           break # finished reading all data
       if index_column_lambda is not None:
         latest_lambda = float(row[index_column_lambda])
-      if index_column_max_temp is not None:
-        latest_max_temp = float(row[index_column_max_temp])
+      if index_column_sol_norm is not None:
+        latest_sol_norm = float(row[index_column_sol_norm])
       if index_L2norm is not None:
         latest_L2norm = float(row[index_L2norm])
       line_i += 1
       continue # go to next data line
-  return latest_lambda, latest_max_temp, latest_L2norm
+  return latest_lambda, latest_sol_norm, latest_L2norm
 
 def writeResultsToCsvFile(results, step_index):
   ''' Write results to S-curve csv file for give step
@@ -241,7 +270,7 @@ def runContinuation(parameters, logger):
   logger.info('Step {0} (first initial)'.format(step_index))
   runInitialSimulation1(parameters, logger)
   lambda_old = parameters['lambda_initial_1']
-  dummy, max_temp, dummy2 = parseCsvFile('extra_param_initial_guess1.csv')
+  dummy, max_temp, dummy2 = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME))
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
 
@@ -250,7 +279,7 @@ def runContinuation(parameters, logger):
   runInitialSimulation2(parameters, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
-  dummy, max_temp, sol_l2norm = parseCsvFile('extra_param_initial_guess2.csv')
+  dummy, max_temp, sol_l2norm = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME))
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
 
@@ -263,24 +292,23 @@ def runContinuation(parameters, logger):
     ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
     ds = parameters['ds_initial'] #*step_index
     # run simulation
-    input_file = os.path.join(parameters['input_dir'], 'extra_param_iteration_L2norm_sot.i')
+    input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
     logger.warning('TODO: fix nodes IDs in C++ code to get programmatically all the node IDs')
     lambda_ic = 2*lambda_old - lambda_older
-    previous_exodus_filename = 'extra_param_initial_guess2.e'
+    previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
     if step_index > 2:
-      previous_exodus_filename = 'extra_param_iteration.e'
+      previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
     command1 = '{exec_loc} --n-threads={nb_procs} '\
-                '-i {input_i} Outputs/csv=true Mesh/file={mesh_file} '\
+                '-i {input_i} Outputs/csv=true Mesh/file={previous_exodus} '\
                 'Variables/lambda/initial_condition={lambda_IC} '\
                 'GlobalParams/ds={ds} GlobalParams/ds_old={ds_old} '\
                 'ScalarKernels/continuation_kernel/continuation_parameter_old={lambda_old_value} '\
                 'ScalarKernels/continuation_kernel/continuation_parameter_older={lambda_older_value} '\
-                'Mesh/file={previous_exodus} '\
                 'UserObjects/old_temp_UO/mesh={previous_exodus} '\
                 'UserObjects/older_temp_UO/mesh={previous_exodus} '\
                 .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                        input_i=input_file, mesh_file='extra_param_initial_guess2.e', # TODO: previous exodus file
-                        ds=ds, ds_old=ds_old_recomputed, lambda_old_value=lambda_old, lambda_older_value=lambda_older,
+                        input_i=input_file, ds=ds, ds_old=ds_old_recomputed,
+                        lambda_old_value=lambda_old, lambda_older_value=lambda_older,
                         lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
     try:
       logger.debug(command1)
@@ -291,7 +319,7 @@ def runContinuation(parameters, logger):
       sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
-    lambda_old, max_temp, sol_l2norm = parseCsvFile('extra_param_iteration.csv')
+    lambda_old, max_temp, sol_l2norm = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME))
     results[step_index] = [lambda_old, max_temp]
     writeResultsToCsvFile(results, step_index)
 
@@ -326,7 +354,7 @@ if __name__ == "__main__":
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
-    'input_dir':'benchmark_1_T',
+    'input_file':'benchmark_1_T/bench1_a.i',
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
     'plot_s_curve':False,
