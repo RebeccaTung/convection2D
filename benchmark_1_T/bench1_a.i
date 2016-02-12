@@ -92,13 +92,10 @@
     block = 0
     alpha_2 = 1
     ar = 10
-    gr = 4.313e-6 # 0.095*exp(-Ar), Ar=10
-    pore_pres = 0
+    gr = 1e-6 # 0.095*exp(-Ar), Ar=10 pore_pres = 0 ref_lewis_nb = 1     Aphi = 0
     temperature = temp
-    ref_lewis_nb = 1
     ar_F = 40
     ar_R = 1
-    Aphi = 0
     phi0 = 0.1
     da_endo = 1
     total_porosity = total_porosity

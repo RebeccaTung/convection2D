@@ -13,12 +13,14 @@ from GenerateInputFiles import writeInitialGuessFile, writeIterationFile, \
   SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME
 
 def createRedbackFilesRequired(parameters, logger):
-  ''' Create Redback files required to run continuation 
+  ''' Create Redback files required to run continuation
       Updates parameters dictionary
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
   '''
   # Create output csv file for S-curve results
+  if os.path.isfile(parameters['result_curve_csv']):
+      os.remove(parameters['result_curve_csv'])
   with open(parameters['result_curve_csv'], 'wb') as csvfile:
     csvwriter = csv.writer(csvfile)
     csvwriter.writerow(['step', 'lambda', 'norm'])
@@ -45,15 +47,15 @@ def createRedbackFilesRequired(parameters, logger):
   parameters['input_IG2'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
   parameters['input_iteration'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   # First initial guess
-  sim_1 = writeInitialGuessFile(1, data_sim, parameters['input_IG1'], handler, logger)
-  sim_2 = writeInitialGuessFile(2, data_sim, parameters['input_IG2'], handler, logger)
-  sim_i = writeIterationFile(data_sim, parameters['input_iteration'], handler, logger)
+  if 1:
+    sim_1 = writeInitialGuessFile(1, data_sim, parameters['input_IG1'], handler, logger)
+    sim_2 = writeInitialGuessFile(2, data_sim, parameters['input_IG2'], handler, logger)
+    sim_i = writeIterationFile(data_sim, parameters['input_iteration'], handler, logger)
 
 def checkAndCleanInputParameters(parameters, logger):
   ''' Check input parameters provided by user
       @param[in] parameters - dictionary of input parameters
-      @param[in] logger - python logger instance  
-      @param[in] handler - instance of MooseInputFileRW
+      @param[in] logger - python logger instance
       @return: found_error - boolean, True if any error was found
   '''
   found_error = False
@@ -193,8 +195,8 @@ def parseCsvFile(csv_filename):
           index_column_lambda = headers.index('lambda')
         if 'solution_norm' in headers:
           index_column_sol_norm = headers.index('solution_norm')
-        if 'L2_norm_u' in headers:
-          index_L2norm = headers.index('L2_norm_u')
+        if 'L2_norm_u_diff' in headers:
+          index_L2norm = headers.index('L2_norm_u_diff')
         line_i += 1
         continue
       # Data line

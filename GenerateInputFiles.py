@@ -1,4 +1,4 @@
-''' Functions to generate input files to run continuation 
+''' Functions to generate input files to run continuation
 '''
 
 import os, sys, random, logging, subprocess, shutil, math, csv, copy
@@ -14,7 +14,7 @@ SIM_ITER_NAME = 'extra_param_iteration'
 CONT_PARAM_NAME = 'gr' # hardcoded for now, should disappear (TODO)
 
 def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
-  ''' Write first or second initial guess file 
+  ''' Write first or second initial guess file
       @param[in] index_ig - int, 1 or 2 (to distinguish first and second initial guess simulation)
       @param[in] sim_data - python structure containing simulation data.
       @param[in] out_filename - string, filename to write
@@ -25,11 +25,11 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
   assert index_ig in [1, 2]
   sim = copy.deepcopy(sim_data)
   top_block_names = [elt['name'] for elt in sim['children']]
-  
+
   ### Mesh
   if index_ig == 2:
     sim = __setMeshBlockFromFile(sim, '{0}.e'.format(SIM_IG1_NAME))
-  
+
   ### AuxVariables
   if index_ig == 2:
     aux_vars_index = top_block_names.index('AuxVariables')
@@ -50,11 +50,11 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
       'attributes':[],
     })
     #TODO: get proper name of variable
-  
+
   ### Kernels
   # Disable timeDerivative kernels
   sim = __disableTimeDerivativeKernels(sim)
-  
+
   ### Materials
   # Change material (just to let user see more easily that this parameter will get overwritten)
   materials_index = top_block_names.index('Materials')
@@ -65,7 +65,7 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
       if elt['name']==CONT_PARAM_NAME:
         elt['value'] = '9999'
         elt['comment'] = 'will be overwritten by continuation wrapper'
-  
+
   ### AuxKernels
   if index_ig == 2:
     auxkernels_index = top_block_names.index('AuxKernels')
@@ -84,26 +84,26 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
         {'name':'execute_on','value':'timestep_end', 'comment':''}
         ],
     })
-  
+
   ### Postprocessors
   sim = __addPostProcessors(sim, index_ig==2)
-  
+
   ### Executioner
   sim = __setExecutionerSteady(sim)
-  
+
   ### Outputs
   base_filename = SIM_IG1_NAME
   if index_ig == 2:
     base_filename = SIM_IG2_NAME
   sim = __updateOutputs(sim, base_filename)
   outputs_index = top_block_names.index('Outputs')
-  
+
   # write to file
   handler.write(sim, out_filename)
   return sim
 
 def writeIterationFile(sim_data, out_filename, handler, logger):
-  ''' Write iteration file 
+  ''' Write iteration file
       @param[in] sim_data - python structure containing simulation data
       @param[in] filename - string, filename to write
       @param[in] logger - python logger instance
@@ -111,10 +111,10 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
   '''
   sim = copy.deepcopy(sim_data)
   top_block_names = [elt['name'] for elt in sim['children']]
-  
+
   ### Mesh
   sim = __setMeshBlockFromFile(sim, '{0}.e'.format(SIM_IG2_NAME))
-  
+
   ### Variables
   variables_index = top_block_names.index('Variables')
   variables = sim['children'][variables_index]
@@ -170,7 +170,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
     ics_index = top_block_names.index('ICs')
     sim['children'].pop(ics_index)
     top_block_names.pop(ics_index)
-  
+
   ### Global parameteres
   if 'GlobalParams' in top_block_names:
     global_params_index = top_block_names.index('GlobalParams')
@@ -268,12 +268,12 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
                   {'name':'functions','value':"'u_old u_older'", 'comment':''},
                   {'name':'w','value':"'2 -1'", 'comment':''}],
   })
-  
+
   ### Kernels
   # Disable timeDerivative kernels
   kernels_index = top_block_names.index('Kernels')
   sim = __disableTimeDerivativeKernels(sim)
-  
+
   ### ScalarKernels
   if 'ScalarKernels' in top_block_names:
     scalarkernels_index = top_block_names.index('ScalarKernels')
@@ -299,7 +299,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
                   {'name':'directional_derivative','value':'directional_derivative', 'comment':''},
                   {'name':'variable','value':'{0}'.format(cont_var_name), 'comment':''}],
   })
-  
+
   ### AuxKernels
   if 'AuxKernels' in top_block_names:
     auxkernels_index = top_block_names.index('AuxKernels')
@@ -327,7 +327,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
       {'name':'execute_on','value':'timestep_end', 'comment':''}
       ],
   })
-  
+
   ### AuxScalarKernels
   if 'AuxScalarKernels' in top_block_names:
     auxscalarkernels_index = top_block_names.index('AuxScalarKernels')
@@ -381,11 +381,11 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
       material['attributes'][index_cont_param]['value'] = '1'
       material['attributes'][index_cont_param]['comment'] = \
         'Gets multiplied by value of scalar variable {0}'.format(cont_var_name)
-  
+
   ### PostProcessors
   sim = __addPostProcessors(sim, add_l2_norm_diff=True)
   pps_index = top_block_names.index('Postprocessors')
-  
+
   ### UserObjects
   if 'UserObjects' in top_block_names:
     userobjects_index = top_block_names.index('UserObjects')
@@ -426,14 +426,14 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
       {'name':'execute_on','value':'initial', 'comment':''}
       ],
   })
-  
+
   ### Executioner
   sim = __setExecutionerSteady(sim)
-  
+
   ### Outputs
   sim = __updateOutputs(sim, base_filename=SIM_ITER_NAME)
-  
-  
+
+
   logger.warning('TODO: writeIterationFile not finished being implemented...')
   # write to file
   handler.write(sim, out_filename)
