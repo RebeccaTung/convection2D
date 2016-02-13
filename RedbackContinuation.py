@@ -6,7 +6,7 @@ import os, sys, random, logging, subprocess, shutil, math, csv, copy
 from os.path import expanduser
 
 from Utils import getLogger
-from CheckMooseOutput import checkMooseOutput
+from CheckMooseOutput import checkMooseOutput, MooseException
 from PlotSCurve import plotSCurve
 from MooseInputFileRW import MooseInputFileRW
 from GenerateInputFiles import writeInitialGuessFile, writeIterationFile, \
@@ -65,7 +65,8 @@ def checkAndCleanInputParameters(parameters, logger):
     return True
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max']
   params_int = ['nb_threads']
-  params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve']
+  params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
+                'error_filename']
   params_bool = ['plot_s_curve']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
@@ -128,6 +129,7 @@ def checkAndCleanInputParameters(parameters, logger):
   parameters['running_dir'] = os.path.realpath(parameters['running_dir'])
   parameters['exec_loc'] = os.path.realpath(exec_loc)
   parameters['result_curve_csv'] = os.path.realpath(parameters['result_curve_csv'])
+  parameters['error_filename'] = os.path.realpath(parameters['error_filename'])
   # Create running directory if required
   if not os.path.isdir(parameters['running_dir']):
     os.mkdir(parameters['running_dir'])
@@ -149,7 +151,7 @@ def runInitialSimulation1(parameters, logger):
   try:
     logger.debug(command1)
     stdout = subprocess.check_output(command1.split())
-    checkMooseOutput(stdout, logger)
+    checkMooseOutput(stdout, parameters['error_filename'], logger)
   except:
     logger.error('Execution failed! (First initialisation step)')
     sys.exit(1)
@@ -168,7 +170,7 @@ def runInitialSimulation2(parameters, logger):
   try:
     logger.debug(command2)
     stdout = subprocess.check_output(command2.split())
-    checkMooseOutput(stdout, logger)
+    checkMooseOutput(stdout, parameters['error_filename'], logger)
   except:
     logger.error('Execution failed! (Second initialisation step)')
     sys.exit(1)
@@ -249,10 +251,35 @@ def parseScurveCsv(parameters, logger):
       continue # go to next data line
   return lambda_vals, max_temp_vals
 
+def getInitialStepLength(ds_old, ds0, previous_nb_attempts):
+  ''' Returns length of initial continuation step ds for coming iteration, not exceeding ds0
+      @param[in] ds_old - float, length of previous successful step for previous iteration
+      @param[in] ds0 - float, initial length of continuation parameter provided by user
+      @param[in] previous_nb_attempts - int, number of attempts it took to succeed in previous iteration
+      @return new_ds - float, length of coming iteration
+  '''
+  logger.debug('getInitialStepLength(ds_old={0}, ds0={1}, previous_nb_attempts={2})'\
+    .format(ds_old, ds0, previous_nb_attempts))
+  #return ds0 # always start with value given by user
+  if previous_nb_attempts in [0]:
+    # last iteration was too easy, increase step a bit
+    new_ds = ds_old*1.5
+  elif previous_nb_attempts in range(1, 5):
+    # last iteration required just a few attempt, start from the same step size
+    new_ds = ds_old
+  else:
+    # last iteration took a lot of attempts, reduce step size directly
+    new_ds = ds_old*0.8
+  # ensure step size doesn't exceed user provided size
+  new_ds = min(new_ds, ds0)
+  logger.debug('  new_ds={0}'.format(new_ds))
+  return new_ds
+
 def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation
       @param[in] logger - python logger instance
   '''
+  MAX_ATTEMPTS = 10 # Maximum attempts to try and solve any given iteration
   logger.info('='*20+' Starting continuation... '+'='*20)
   found_error = checkAndCleanInputParameters(parameters, logger)
   if found_error:
@@ -284,40 +311,52 @@ def runContinuation(parameters, logger):
   dummy, max_temp, sol_l2norm = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME))
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
+  attempt_index = 1 # This second initialisation step succeeded in 1 attempt
 
+  input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
   #raw_input('About to start the first iterative step.\nPress any key to continue...')
   while not finished:
     step_index += 1
-    logger.info('Step {0}, s={1}'.format(step_index, s))
     ds_old = ds
     ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
-    ds = parameters['ds_initial'] #*step_index
-    # run simulation
-    input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
-    logger.warning('TODO: fix nodes IDs in C++ code to get programmatically all the node IDs')
-    lambda_ic = 2*lambda_old - lambda_older
-    previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
-    if step_index > 2:
-      previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
-    command1 = '{exec_loc} --n-threads={nb_procs} '\
-                '-i {input_i} Outputs/csv=true Mesh/file={previous_exodus} '\
-                'Variables/lambda/initial_condition={lambda_IC} '\
-                'GlobalParams/ds={ds} GlobalParams/ds_old={ds_old} '\
-                'ScalarKernels/continuation_kernel/continuation_parameter_old={lambda_old_value} '\
-                'ScalarKernels/continuation_kernel/continuation_parameter_older={lambda_older_value} '\
-                'UserObjects/old_temp_UO/mesh={previous_exodus} '\
-                'UserObjects/older_temp_UO/mesh={previous_exodus} '\
-                .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                        input_i=input_file, ds=ds, ds_old=ds_old_recomputed,
-                        lambda_old_value=lambda_old, lambda_older_value=lambda_older,
-                        lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
-    try:
-      logger.debug(command1)
-      stdout = subprocess.check_output(command1.split())
-      checkMooseOutput(stdout, logger)
-    except:
-      logger.error('Execution failed! (Iteration step={0})'.format(step_index))
+    ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index)
+    step_succeeded = False
+    attempt_index = 0
+    while not step_succeeded and attempt_index < MAX_ATTEMPTS:
+      logger.info('Step {0} (attempt {1}), s={2}, ds={3}'\
+                  .format(step_index, attempt_index, s, ds))
+      lambda_ic = 2*lambda_old - lambda_older
+      previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
+      if step_index > 2:
+        previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
+      command1 = '{exec_loc} --n-threads={nb_procs} '\
+                  '-i {input_i} Outputs/csv=true Mesh/file={previous_exodus} '\
+                  'Variables/lambda/initial_condition={lambda_IC} '\
+                  'GlobalParams/ds={ds} GlobalParams/ds_old={ds_old} '\
+                  'ScalarKernels/continuation_kernel/continuation_parameter_old={lambda_old_value} '\
+                  'ScalarKernels/continuation_kernel/continuation_parameter_older={lambda_older_value} '\
+                  'UserObjects/old_temp_UO/mesh={previous_exodus} '\
+                  'UserObjects/older_temp_UO/mesh={previous_exodus} '\
+                  .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
+                          input_i=input_file, ds=ds, ds_old=ds_old_recomputed,
+                          lambda_old_value=lambda_old, lambda_older_value=lambda_older,
+                          lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
+      try:
+        logger.debug(command1)
+        stdout = subprocess.check_output(command1.split())
+        checkMooseOutput(stdout, parameters['error_filename'], logger)
+        # if it passes that point with no Exception raised, then attempt succeeded
+        step_succeeded = True
+        continue
+      except MooseException, e:
+        logger.info('Attempt failed Iteration step={0} with ds={1}'\
+                    .format(step_index, ds))
+        attempt_index += 1
+        ds = ds/2.
+    if attempt_index >= MAX_ATTEMPTS:
+      logger.error('Execution failed after {0} attempts! (Iteration step={0} with ds={1})'\
+                   .format(attempt_index, step_index, ds))
       sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
@@ -326,8 +365,8 @@ def runContinuation(parameters, logger):
     writeResultsToCsvFile(results, step_index)
 
     if 1:
-        # Compute ds externally for comparison
-        logger.info('  ds (set) = {0}, sol_l2norm = {1}, ds_old={2}'.format(ds, sol_l2norm, ds_old))
+      # Compute ds externally for comparison
+      logger.debug('  ds (set) = {0}, sol_l2norm = {1}, ds_old={2}'.format(ds, sol_l2norm, ds_old))
 
     # check if finished
     if (s > parameters['s_max']):
@@ -349,16 +388,17 @@ if __name__ == "__main__":
   outpud_dir = '.'
   ds = 1e-2
   parameters = {
-    'lambda_initial_1':1e-2,
-    'lambda_initial_2':2e-2,
+    'lambda_initial_1':ds,
+    'lambda_initial_2':2*ds,
     'ds_initial':ds,
-    's_max':0.2,
+    's_max':1,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
     'input_file':'benchmark_1_T/bench1_a.i',
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
+    'error_filename':'error_output.txt',
     'plot_s_curve':False,
     'ref_s_curve':'benchmark_1_T/ref.csv'
   }
