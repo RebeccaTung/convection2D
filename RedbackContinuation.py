@@ -10,13 +10,15 @@ from CheckMooseOutput import checkMooseOutput, MooseException
 from PlotSCurve import plotSCurve
 from MooseInputFileRW import MooseInputFileRW
 from GenerateInputFiles import writeInitialGuessFile, writeIterationFile, \
-  SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME
+  SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME, updateMultiplyingCoefficientsForInitialGuess
 
-def createRedbackFilesRequired(parameters, logger):
+def createRedbackFilesRequired(parameters, handler, logger):
   ''' Create Redback files required to run continuation
       Updates parameters dictionary
       @param[in] parameters - dictionary of input parameters
+      @param[in] handler - MooseInputFileRW instance
       @param[in] logger - python logger instance
+      @return sim_i - dictionary representing simulation for iteration steps
   '''
   # Create output csv file for S-curve results
   if os.path.isfile(parameters['result_curve_csv']):
@@ -29,7 +31,8 @@ def createRedbackFilesRequired(parameters, logger):
   root, ext = os.path.splitext(filename_in)
   assert ext == '.i'
   filename_out = os.path.join(parameters['running_dir'], 'input_recreated.i')
-  handler = MooseInputFileRW()
+  if handler == None:
+    handler = MooseInputFileRW()
   data_sim = handler.read(filename_in)
   handler.write(data_sim, filename_out)
   with open(filename_in, 'r') as f_1:
@@ -51,6 +54,9 @@ def createRedbackFilesRequired(parameters, logger):
     sim_1 = writeInitialGuessFile(1, data_sim, parameters['input_IG1'], handler, logger)
     sim_2 = writeInitialGuessFile(2, data_sim, parameters['input_IG2'], handler, logger)
     sim_i = writeIterationFile(data_sim, parameters['input_iteration'], handler, logger)
+  else:
+    sim_i = None
+  return sim_i
 
 def checkAndCleanInputParameters(parameters, logger):
   ''' Check input parameters provided by user
@@ -251,28 +257,30 @@ def parseScurveCsv(parameters, logger):
       continue # go to next data line
   return lambda_vals, max_temp_vals
 
-def getInitialStepLength(ds_old, ds0, previous_nb_attempts):
-  ''' Returns length of initial continuation step ds for coming iteration, not exceeding ds0
+def getInitialStepLength(ds_old, ds0, previous_nb_attempts, logger):
+  ''' Calculates length of initial continuation step new_ds for coming iteration, not exceeding ds0.
       @param[in] ds_old - float, length of previous successful step for previous iteration
       @param[in] ds0 - float, initial length of continuation parameter provided by user
       @param[in] previous_nb_attempts - int, number of attempts it took to succeed in previous iteration
+      @param[in] logger - python logger instance
       @return new_ds - float, length of coming iteration
   '''
   logger.debug('getInitialStepLength(ds_old={0}, ds0={1}, previous_nb_attempts={2})'\
     .format(ds_old, ds0, previous_nb_attempts))
   #return ds0 # always start with value given by user
+  mult_coeff = 1 # mutliplying coefficient to apply to ds_old
   if previous_nb_attempts in [0]:
     # last iteration was too easy, increase step a bit
-    new_ds = ds_old*1.5
+    mult_coeff = 1.2
   elif previous_nb_attempts in range(1, 5):
     # last iteration required just a few attempt, start from the same step size
-    new_ds = ds_old
+    mult_coeff = 1
   else:
     # last iteration took a lot of attempts, reduce step size directly
-    new_ds = ds_old*0.8
+    mult_coeff = 0.8
   # ensure step size doesn't exceed user provided size
-  new_ds = min(new_ds, ds0)
-  logger.debug('  new_ds={0}'.format(new_ds))
+  new_ds = min(mult_coeff*ds_old, ds0)
+  logger.debug('  Changing ds_init by {0}x --> new_ds={1}'.format(mult_coeff, new_ds))
   return new_ds
 
 def runContinuation(parameters, logger):
@@ -284,7 +292,8 @@ def runContinuation(parameters, logger):
   found_error = checkAndCleanInputParameters(parameters, logger)
   if found_error:
     return
-  createRedbackFilesRequired(parameters, logger)
+  handler = MooseInputFileRW()
+  sim_i = createRedbackFilesRequired(parameters, handler, logger)
   initial_cwd = os.getcwd()
   os.chdir(parameters['running_dir'])
   # Pseudo arc-length continuation algorithm
@@ -315,18 +324,26 @@ def runContinuation(parameters, logger):
 
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
-  #raw_input('About to start the first iterative step.\nPress any key to continue...')
   while not finished:
+    #raw_input('About to start the first iterative step.\nPress enter to continue...')
     step_index += 1
     ds_old = ds
     ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
-    ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index)
+    ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index, logger)
     step_succeeded = False
     attempt_index = 0
     while not step_succeeded and attempt_index < MAX_ATTEMPTS:
       logger.info('Step {0} (attempt {1}), s={2}, ds={3}'\
                   .format(step_index, attempt_index, s, ds))
-      lambda_ic = 2*lambda_old - lambda_older
+      # Calculate multiplying coefficients of old and older solutions for coming initial guess
+      coeff_mult = ds/ds_old
+      coeff_guess_old = 1 + coeff_mult
+      coeff_guess_older = -coeff_mult
+      lambda_ic = coeff_guess_old*lambda_old + coeff_guess_older*lambda_older
+      sim_i = updateMultiplyingCoefficientsForInitialGuess\
+        (sim_i, coeff_guess_old, coeff_guess_older)
+      handler.write(sim_i, parameters['input_iteration'])
+      # run simulation
       previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
       if step_index > 2:
         previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
@@ -339,7 +356,7 @@ def runContinuation(parameters, logger):
                   'UserObjects/old_temp_UO/mesh={previous_exodus} '\
                   'UserObjects/older_temp_UO/mesh={previous_exodus} '\
                   .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                          input_i=input_file, ds=ds, ds_old=ds_old_recomputed,
+                          input_i=input_file, ds=ds, ds_old=ds_old,#ds_old_recomputed,
                           lambda_old_value=lambda_old, lambda_older_value=lambda_older,
                           lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
       try:
@@ -350,7 +367,7 @@ def runContinuation(parameters, logger):
         step_succeeded = True
         continue
       except MooseException, e:
-        logger.info('Attempt failed Iteration step={0} with ds={1}'\
+        logger.debug('Attempt failed Iteration step={0} with ds={1}'\
                     .format(step_index, ds))
         attempt_index += 1
         ds = ds/2.
@@ -364,21 +381,19 @@ def runContinuation(parameters, logger):
     results[step_index] = [lambda_old, max_temp]
     writeResultsToCsvFile(results, step_index)
 
-    if 1:
+    if 0:
       # Compute ds externally for comparison
       logger.debug('  ds (set) = {0}, sol_l2norm = {1}, ds_old={2}'.format(ds, sol_l2norm, ds_old))
 
+    # increment s
+    s += ds
     # check if finished
     if (s > parameters['s_max']):
       finished = True
-    # increment s
-    ds = parameters['ds_initial']
-    s += ds
 
     if parameters['plot_s_curve']:
       plotSCurve(parameters, logger)
-    #raw_input('Press any key to continue...')
-
+  
   # Finished, clean up
   os.chdir(initial_cwd)
   return results

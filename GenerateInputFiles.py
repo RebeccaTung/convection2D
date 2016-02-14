@@ -102,11 +102,14 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
   handler.write(sim, out_filename)
   return sim
 
-def writeIterationFile(sim_data, out_filename, handler, logger):
+def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutlipliers=(2,-1)):
   ''' Write iteration file
       @param[in] sim_data - python structure containing simulation data
       @param[in] filename - string, filename to write
       @param[in] logger - python logger instance
+      @param[in] coeff_mutlipliers - list of 2 multipliers (mult_old, mult_older) 
+        to apply to u_old and u_older such that the initial guess for the solution is
+        u_guess = mult_old*u_old + mult_older*u_older
       @return sim_data - modified python structure
   '''
   sim = copy.deepcopy(sim_data)
@@ -266,7 +269,8 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
     'comments':[],
     'attributes':[{'name':'type','value':"LinearCombinationFunction", 'comment':''},
                   {'name':'functions','value':"'u_old u_older'", 'comment':''},
-                  {'name':'w','value':"'2 -1'", 'comment':''}],
+                  {'name':'w','value':"'{} {}'".\
+                   format(coeff_mutlipliers[0], coeff_mutlipliers[1]), 'comment':''}],
   })
 
   ### Kernels
@@ -433,11 +437,25 @@ def writeIterationFile(sim_data, out_filename, handler, logger):
   ### Outputs
   sim = __updateOutputs(sim, base_filename=SIM_ITER_NAME)
 
-
-  logger.warning('TODO: writeIterationFile not finished being implemented...')
   # write to file
   handler.write(sim, out_filename)
   return sim
+
+def updateMultiplyingCoefficientsForInitialGuess(sim_data, coeff_guess_old, coeff_guess_older):
+  ''' Update multiplying coefficients for initial guess of the solution
+      @param[in,out] sim_data - python structure with simulation data. Gets modified
+      @return sim_data - updated python structure
+  '''
+  top_block_names = [elt['name'] for elt in sim_data['children']]
+  functions_index = top_block_names.index('Functions')
+  functions = sim_data['children'][functions_index]
+  all_functions_names = [elt['name'] for elt in functions['children']]
+  index_ig = all_functions_names.index('initial_solution')
+  function_ig = functions['children'][index_ig]
+  attr_names = [attr['name'] for attr in function_ig['attributes']]
+  index_w = attr_names.index('w')
+  function_ig['attributes'][index_w]['value'] = "'{0} {1}'".format(coeff_guess_old, coeff_guess_older)
+  return sim_data
 
 def __setMeshBlockFromFile(sim_data, mesh_filename):
   ''' Update parameters to set mesh from file with given filename

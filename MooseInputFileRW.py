@@ -47,14 +47,14 @@ class MooseInputFileRW():
         for subblock in block['children']:
           self._writeSubblock(subblock, f_out, indent_level=1)
         print >> f_out, '[]\n'
-    self.logger.info('File "{0}" created'.format(out_filename))
+    self.logger.debug('File "{0}" created'.format(out_filename))
   
   def read(self, in_filename):
     ''' Read in data structure from Moose input file
         @param[in] in_filename - string, filename of file to read from
         @return data - python dictionary containing simulation structure
     '''
-    self.logger.info('Parsing file "{0}"'.format(in_filename))
+    self.logger.debug('Parsing file "{0}"'.format(in_filename))
     with open(in_filename, 'r') as f_in:
       self.datalines = f_in.readlines()
     index_line = 0
