@@ -267,7 +267,7 @@ def getInitialStepLength(ds_old, ds0, previous_nb_attempts, logger):
   '''
   logger.debug('getInitialStepLength(ds_old={0}, ds0={1}, previous_nb_attempts={2})'\
     .format(ds_old, ds0, previous_nb_attempts))
-  #return ds0 # always start with value given by user
+  return ds0 # always start with value given by user
   mult_coeff = 1 # mutliplying coefficient to apply to ds_old
   if previous_nb_attempts in [0]:
     # last iteration was too easy, increase step a bit
@@ -287,7 +287,7 @@ def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation
       @param[in] logger - python logger instance
   '''
-  MAX_ATTEMPTS = 10 # Maximum attempts to try and solve any given iteration
+  MAX_ATTEMPTS = 8 # Maximum attempts to try and solve any given iteration
   logger.info('='*20+' Starting continuation... '+'='*20)
   found_error = checkAndCleanInputParameters(parameters, logger)
   if found_error:
@@ -321,6 +321,7 @@ def runContinuation(parameters, logger):
   results[step_index] = [lambda_old, max_temp]
   writeResultsToCsvFile(results, step_index)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
+  ds = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
 
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
@@ -328,7 +329,7 @@ def runContinuation(parameters, logger):
     #raw_input('About to start the first iterative step.\nPress enter to continue...')
     step_index += 1
     ds_old = ds
-    ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
+    #ds_old_recomputed = math.sqrt(sol_l2norm**2 + (lambda_old - lambda_older)**2)
     ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index, logger)
     step_succeeded = False
     attempt_index = 0
@@ -356,7 +357,7 @@ def runContinuation(parameters, logger):
                   'UserObjects/old_temp_UO/mesh={previous_exodus} '\
                   'UserObjects/older_temp_UO/mesh={previous_exodus} '\
                   .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                          input_i=input_file, ds=ds, ds_old=ds_old,#ds_old_recomputed,
+                          input_i=input_file, ds=ds, ds_old=ds_old,
                           lambda_old_value=lambda_old, lambda_older_value=lambda_older,
                           lambda_IC=lambda_ic, previous_exodus=previous_exodus_filename)
       try:
@@ -370,7 +371,7 @@ def runContinuation(parameters, logger):
         logger.debug('Attempt failed Iteration step={0} with ds={1}'\
                     .format(step_index, ds))
         attempt_index += 1
-        ds = ds/2.
+        ds = ds/4.
     if attempt_index >= MAX_ATTEMPTS:
       logger.error('Execution failed after {0} attempts! (Iteration step={0} with ds={1})'\
                    .format(attempt_index, step_index, ds))
@@ -403,10 +404,10 @@ if __name__ == "__main__":
   outpud_dir = '.'
   ds = 1e-2
   parameters = {
-    'lambda_initial_1':ds,
-    'lambda_initial_2':2*ds,
+    'lambda_initial_1':1e-8, #ds,
+    'lambda_initial_2':2e-8, #2*ds,
     'ds_initial':ds,
-    's_max':1,
+    's_max':10,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,

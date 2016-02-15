@@ -70,7 +70,7 @@ def plotSCurve(parameters, logger):
   plt.xlabel('Continuation parameter', fontsize=20)
   plt.ylabel('Norm of the solution', fontsize=20)
 
-  plt.plot(ref_x_values, ref_y_values,'r-x')
+  #plt.plot(ref_x_values, ref_y_values,'r-x')
   plt.hold(True)
   x_values = np.array(lambda_vals)
   y_values = np.array(max_temp_vals)

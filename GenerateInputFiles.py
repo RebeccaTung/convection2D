@@ -382,7 +382,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
         index_cont_param = index_cont_param + 1
         material['attributes'].insert\
           (index_cont_param, {'name':CONT_PARAM_NAME,'value':'', 'comment':''})
-      material['attributes'][index_cont_param]['value'] = '1'
+      material['attributes'][index_cont_param]['value'] = '1e-4'
       material['attributes'][index_cont_param]['comment'] = \
         'Gets multiplied by value of scalar variable {0}'.format(cont_var_name)
 

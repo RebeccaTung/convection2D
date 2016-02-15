@@ -12,3 +12,5 @@ extra_param_initial_guess2.csv
 extra_param_initial_guess2.e
 input_redbackcont1D_coarser.xml
 error_output.txt
+bench1_a_out.csv
+bench1_a_out.e
