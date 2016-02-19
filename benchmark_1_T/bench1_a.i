@@ -103,7 +103,7 @@
 []
 
 [Postprocessors]
-  active = 'middle_temp'
+  active = 'middle_temp nli nnli'
   [./middle_temp]
     type = PointValue
     variable = temp
@@ -114,17 +114,23 @@
     variable = temp
     point = '0 0 0'
   [../]
+  [./nli]
+    type = NumLinearIterations
+  [../]
+  [./nnli]
+    type = NumNonlinearIterations
+  [../]
 []
 
 [Executioner]
   # petsc_options_iname = '-pc_type -pc_hypre_type'
   # petsc_options_value = 'hypre boomeramg'
   type = Transient
-  l_tol = 1e-15
+  l_tol = 1e-12
   l_max_its = 1000
-  nl_rel_tol = 1e-15
+  nl_rel_tol = 1e-12
   nl_max_its = 50
-  nl_abs_tol = 1e-15 # 1e-50
+  nl_abs_tol = 1e-10 # 1e-50
   num_steps = 10000
   ss_check_tol = 1e-6
   end_time = 10
