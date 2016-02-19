@@ -27,3 +27,37 @@ def getLogger(name, log_file='log.txt', level=logging.INFO):
   logger.setLevel(level)
   return logger
 
+def getListFromString(text):
+  ''' Get list of strings from MOOSE text representing a list of items
+      @param[in] text - string, text to parse
+      @return list - python list of strings
+  '''
+  tmp = text.strip()
+  if tmp.startswith("'") and tmp.endswith("'"):
+    tmp = tmp[1:-1]
+  list = tmp.split(' ')
+  return list
+
+def getListOfActiveVariableNames(sim_data, logger):
+  ''' Returns list of active variable names in simulation.
+      @param[in] sim_data - dict, simulation dictionary as returned 
+        by RedbackContinuation.createRedbackFilesRequired()
+      @param[in] logger - python logger instance
+      @return nb_vars - int, number of active variables
+  '''
+  top_block_names = [elt['name'] for elt in sim_data['children']]
+  variables_index = top_block_names.index('Variables')
+  variables = sim_data['children'][variables_index]
+  attribute_names = [attr['name'] for attr in variables['attributes']]
+  active_index = None
+  if 'active' in attribute_names:
+    active_index = attribute_names.index('active')
+  all_variables_names = [elt['name'] for elt in variables['children']]
+  # find active variables
+  if active_index is None:
+    active_index = 0
+    active_variables_names = all_variables_names
+  else:
+    active_variables_names = getListFromString(variables['attributes'][active_index]['value'])
+  return active_variables_names
+

@@ -5,7 +5,7 @@
 import os, sys, random, logging, subprocess, shutil, math, csv, copy
 from os.path import expanduser
 
-from Utils import getLogger
+from Utils import getLogger, getListFromString, getListOfActiveVariableNames
 from CheckMooseOutput import checkMooseOutput, MooseException
 from PlotSCurve import plotSCurve
 from MooseInputFileRW import MooseInputFileRW
@@ -18,7 +18,10 @@ def createRedbackFilesRequired(parameters, handler, logger):
       @param[in] parameters - dictionary of input parameters
       @param[in] handler - MooseInputFileRW instance
       @param[in] logger - python logger instance
+      @return sim_1 - dictionary representing simulation for first initial guess
+      @return sim_2 - dictionary representing simulation for first initial guess
       @return sim_i - dictionary representing simulation for iteration steps
+      @return nb_vars - int, number of variables in simulation (not counting continuation parameters)
   '''
   # Create output csv file for S-curve results
   if os.path.isfile(parameters['result_curve_csv']):
@@ -45,18 +48,17 @@ def createRedbackFilesRequired(parameters, handler, logger):
     raise Exception, error_msg
   else:
     logger.debug('Our reader/writer successfully read and wrote the input file')
+  # Count number of variables
+  variable_names = getListOfActiveVariableNames(data_sim, logger)
+  nb_vars = len(variable_names)
   # Create 3 simulation files (IG1, IG1, iteration)
   parameters['input_IG1'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG1_NAME))
   parameters['input_IG2'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
   parameters['input_iteration'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
-  # First initial guess
-  if 1:
-    sim_1 = writeInitialGuessFile(1, data_sim, parameters['input_IG1'], handler, logger)
-    sim_2 = writeInitialGuessFile(2, data_sim, parameters['input_IG2'], handler, logger)
-    sim_i = writeIterationFile(data_sim, parameters['input_iteration'], handler, logger)
-  else:
-    sim_i = None
-  return sim_i
+  sim_1 = writeInitialGuessFile(1, data_sim, variable_names, parameters['input_IG1'], handler, logger)
+  sim_2 = writeInitialGuessFile(2, data_sim, variable_names, parameters['input_IG2'], handler, logger)
+  sim_i = writeIterationFile(data_sim, variable_names, parameters['input_iteration'], handler, logger)
+  return sim_1, sim_2, sim_i, nb_vars
 
 def checkAndCleanInputParameters(parameters, logger):
   ''' Check input parameters provided by user
@@ -181,22 +183,23 @@ def runInitialSimulation2(parameters, logger):
     logger.error('Execution failed! (Second initialisation step)')
     sys.exit(1)
 
-def parseCsvFile(csv_filename):
-  ''' Parse csv file to extract latest value of lambda, max_temp
-      and L2_norm_u_diff
+def parseCsvFile(csv_filename, nb_vars):
+  ''' Parse csv file to extract latest values from file, including
+      lambda, solution_norm, L2_norm_u_diff, nli, nnli
       @param[in] csv_filename - string, name of csv file to parse
+      @param[in] nb_vars - int, number of variables active in the simulation
       @return data - dictionary of data with following keys:
         ['lambda','solution_norm','L2_norm_u_diff','nli','nnli']
   '''
   logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
-  latest_sol_norm = None
-  latest_L2norm = None
+  latest_sol_norm = [None]*nb_vars
+  latest_L2norm_diff = [None]*nb_vars
   latest_nli = None
   latest_nnli = None
   index_column_lambda = None
-  index_column_sol_norm = None
-  index_L2norm = None
+  index_column_sol_norm = [None]*nb_vars
+  index_L2norm_diff = [None]*nb_vars
   index_nli = None
   index_nnli = None
   with open(csv_filename, 'rb') as csvfile:
@@ -208,10 +211,15 @@ def parseCsvFile(csv_filename):
         headers = row
         if 'lambda' in headers:
           index_column_lambda = headers.index('lambda')
-        if 'solution_norm' in headers:
-          index_column_sol_norm = headers.index('solution_norm')
-        if 'L2_norm_u_diff' in headers:
-          index_L2norm = headers.index('L2_norm_u_diff')
+        for k in range(nb_vars):
+          # solutions norms
+          label = 'solution{0}_norm'.format(k)
+          if label in headers:
+            index_column_sol_norm[k] = headers.index(label)
+          # solutions diff norms
+          label = 'L2_norm_u{0}_diff'.format(k)
+          if label in headers:
+            index_L2norm_diff[k] = headers.index(label)
         if 'nli' in headers:
           index_nli = headers.index('nli')
         if 'nnli' in headers:
@@ -223,10 +231,14 @@ def parseCsvFile(csv_filename):
           break # finished reading all data
       if index_column_lambda is not None:
         latest_lambda = float(row[index_column_lambda])
-      if index_column_sol_norm is not None:
-        latest_sol_norm = float(row[index_column_sol_norm])
-      if index_L2norm is not None:
-        latest_L2norm = float(row[index_L2norm])
+      for k in range(nb_vars):
+        # solutions norms
+        if index_column_sol_norm[k] is not None:
+          latest_sol_norm[k] = float(row[index_column_sol_norm[k]])
+        # solutions diff norms
+        label = 'L2_norm_u{0}_diff'.format(k)
+        if index_L2norm_diff[k] is not None:
+          latest_L2norm_diff[k] = float(row[index_L2norm_diff[k]])
       if index_nli is not None:
         latest_nli = float(row[index_nli])
       if index_nnli is not None:
@@ -236,7 +248,7 @@ def parseCsvFile(csv_filename):
   data = {
     'lambda':latest_lambda,
     'solution_norm':latest_sol_norm,
-    'L2_norm_u_diff':latest_L2norm,
+    'L2_norm_u_diff':latest_L2norm_diff,
     'nli':latest_nli,
     'nnli':latest_nnli
   }
@@ -250,7 +262,8 @@ def writeResultsToCsvFile(results, step_index):
   with open(parameters['result_curve_csv'], 'a') as csvfile:
     csvwriter = csv.writer(csvfile)
     csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index]['lambda']),
-                        '{0:3.16e}'.format(results[step_index]['solution_norm'])])
+                        '{0:3.16e}'.format(results[step_index]['solution_norm'][0])])
+    # TODO: which solution norm do we use?
 
 def parseScurveCsv(parameters, logger):
   ''' Parse S-curve csv file
@@ -305,6 +318,23 @@ def getInitialStepLength(ds_old, ds0, previous_nb_attempts, logger):
   logger.debug('  Changing ds_init by {0}x --> new_ds={1}'.format(mult_coeff, new_ds))
   return new_ds
 
+def computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, 
+  nb_vars, logger):
+  ''' Compute length "ds" for previous step.
+      @param[in] results - dictionary of results as returned by parseCsvFile()
+      @param[in] step_index - int, step index
+      @param[in] lambda_old - float, old value of continuation parameter
+      @param[in] lambda_older - float, older value of continuation parameter
+      @param[in] nb_vars - int, number of variables in the simulation
+      @param[in] logger - python logger instance
+      @return ds - float, length of continuation parameter increment
+  '''
+  var_diff_squared = 0
+  for k in range(nb_vars):
+    var_diff_squared += results[step_index]['L2_norm_u_diff'][k]**2
+  ds = math.sqrt(var_diff_squared + (lambda_old - lambda_older)**2)
+  return ds
+
 def runContinuation(parameters, logger):
   ''' Master function to run pseudo arc-length continuation
       @param[in] logger - python logger instance
@@ -315,7 +345,7 @@ def runContinuation(parameters, logger):
   if found_error:
     return
   handler = MooseInputFileRW()
-  sim_i = createRedbackFilesRequired(parameters, handler, logger)
+  sim_1, sim_2, sim_i, nb_vars = createRedbackFilesRequired(parameters, handler, logger)
   initial_cwd = os.getcwd()
   os.chdir(parameters['running_dir'])
   # Pseudo arc-length continuation algorithm
@@ -329,7 +359,7 @@ def runContinuation(parameters, logger):
   logger.info('Step {0} (first initial)'.format(step_index))
   runInitialSimulation1(parameters, logger)
   lambda_old = parameters['lambda_initial_1']
-  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME))
+  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars)
   results[step_index]['lambda'] = parameters['lambda_initial_1']
   writeResultsToCsvFile(results, step_index)
 
@@ -338,11 +368,11 @@ def runContinuation(parameters, logger):
   runInitialSimulation2(parameters, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
-  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME))
+  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars)
   results[step_index]['lambda'] = parameters['lambda_initial_2']
   writeResultsToCsvFile(results, step_index)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
-  ds = math.sqrt(results[step_index]['L2_norm_u_diff']**2 + (lambda_old - lambda_older)**2)
+  ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
   
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
@@ -362,7 +392,7 @@ def runContinuation(parameters, logger):
       coeff_guess_older = -coeff_mult
       lambda_ic = coeff_guess_old*lambda_old + coeff_guess_older*lambda_older
       sim_i = updateMultiplyingCoefficientsForInitialGuess\
-        (sim_i, coeff_guess_old, coeff_guess_older)
+        (sim_i, coeff_guess_old, coeff_guess_older, nb_vars)
       handler.write(sim_i, parameters['input_iteration'])
       # run simulation
       previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
@@ -398,13 +428,9 @@ def runContinuation(parameters, logger):
       sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
-    results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME))
+    results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME), nb_vars)
     lambda_old = results[step_index]['lambda']
     writeResultsToCsvFile(results, step_index)
-
-    if 0:
-      # Compute ds externally for comparison
-      logger.debug('  ds (set) = {0}, sol_l2norm = {1}, ds_old={2}'.format(ds, results[step_index]['L2_norm_u_diff'], ds_old))
 
     # increment s
     s += ds
@@ -431,7 +457,7 @@ if __name__ == "__main__":
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
-    'input_file':'benchmark_1_T/bench1_a.i',
+    'input_file':'benchmark_1_T/bench1_a.i',#'benchmark_4_TH/bench_TH.i',
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
     'error_filename':'error_output.txt',

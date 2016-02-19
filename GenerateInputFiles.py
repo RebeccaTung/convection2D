@@ -4,7 +4,7 @@
 import os, sys, random, logging, subprocess, shutil, math, csv, copy
 from os.path import expanduser
 
-from Utils import getLogger
+from Utils import getLogger, getListFromString, getListOfActiveVariableNames
 from MooseInputFileRW import MooseInputFileRW
 
 SIM_IG1_NAME = 'extra_param_initial_guess1'
@@ -13,19 +13,22 @@ SIM_ITER_NAME = 'extra_param_iteration'
 
 CONT_PARAM_NAME = 'gr' # hardcoded for now, should disappear (TODO)
 
-def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
+def writeInitialGuessFile(index_ig, sim_data, variable_names, out_filename, handler, logger):
   ''' Write first or second initial guess file
       @param[in] index_ig - int, 1 or 2 (to distinguish first and second initial guess simulation)
       @param[in] sim_data - python structure containing simulation data.
+      @param[in] variable_names - list of strings representing variable names (not counting continuation parameter)
       @param[in] out_filename - string, filename to write
       @param[in] handler - instance of MooseInputFileRW
       @param[in] logger - python logger instance
       @return sim_data - modified python structure
+      @return nb_vars - int, number of active variables (not counting continuation parameter)
   '''
   assert index_ig in [1, 2]
   sim = copy.deepcopy(sim_data)
   top_block_names = [elt['name'] for elt in sim['children']]
-
+  nb_vars = len(variable_names)
+  
   ### Mesh
   if index_ig == 2:
     sim = __setMeshBlockFromFile(sim, '{0}.e'.format(SIM_IG1_NAME))
@@ -35,21 +38,21 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
     aux_vars_index = top_block_names.index('AuxVariables')
     aux_vars = sim['children'][aux_vars_index]
     all_aux_var_names = [elt['name'] for elt in aux_vars['children']]
-    assert 'old_temp' not in all_aux_var_names
-    assert 'u_diff_auxvar' not in all_aux_var_names
-    aux_vars['children'].append({
-      'name':'old_temp',
-      'children':[],
-      'comments':[],
-      'attributes':[{'name':'initial_from_file_var','value':"temp", 'comment':''}],
-    })
-    aux_vars['children'].append({
-      'name':'u_diff_auxvar',
-      'children':[],
-      'comments':[],
-      'attributes':[],
-    })
-    #TODO: get proper name of variable
+    for k in range(nb_vars):
+      assert 'old_var{0}'.format(k) not in all_aux_var_names
+      assert 'u{0}_diff_auxvar'.format(k) not in all_aux_var_names
+      aux_vars['children'].append({
+        'name':'old_{0}'.format(variable_names[k]),
+        'children':[],
+        'comments':[],
+        'attributes':[{'name':'initial_from_file_var','value':variable_names[k], 'comment':''}],
+      })
+      aux_vars['children'].append({
+        'name':'u{0}_diff_auxvar'.format(k), # TODO: names should use variable_names[k]...
+        'children':[],
+        'comments':[],
+        'attributes':[],
+      })
 
   ### Kernels
   # Disable timeDerivative kernels
@@ -71,22 +74,23 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
     auxkernels_index = top_block_names.index('AuxKernels')
     auxkernels = sim['children'][auxkernels_index]
     all_auxkernel_names = [elt['name'] for elt in auxkernels['children']]
-    assert 'u_diff_auxkernel' not in all_auxkernel_names
-    auxkernels['children'].append({
-      'name':'u_diff_auxkernel',
-      'children':[],
-      'comments':[],
-      'attributes':[
-        {'name':'type','value':'RedbackDiffVarsAux', 'comment':''},
-        {'name':'variable','value':'u_diff_auxvar', 'comment':''},
-        {'name':'variable_2','value':'old_temp', 'comment':''},
-        {'name':'variable_1','value':'temp', 'comment':''},
-        {'name':'execute_on','value':'timestep_end', 'comment':''}
-        ],
-    })
+    for k in range(nb_vars):
+      assert 'u{0}_diff_auxkernel'.format(k) not in all_auxkernel_names
+      auxkernels['children'].append({
+        'name':'u{0}_diff_auxkernel'.format(k),
+        'children':[],
+        'comments':[],
+        'attributes':[
+          {'name':'type','value':'RedbackDiffVarsAux', 'comment':''},
+          {'name':'variable','value':'u{0}_diff_auxvar'.format(k), 'comment':''},
+          {'name':'variable_2','value':'old_{0}'.format(variable_names[k]), 'comment':''},
+          {'name':'variable_1','value':variable_names[k], 'comment':''},
+          {'name':'execute_on','value':'timestep_end', 'comment':''}
+          ],
+      })
 
   ### Postprocessors
-  sim = __addPostProcessors(sim, index_ig==2)
+  sim = __addPostProcessors(sim, variable_names, index_ig==2)
 
   ### Executioner
   sim = __setExecutionerSteady(sim)
@@ -102,10 +106,11 @@ def writeInitialGuessFile(index_ig, sim_data, out_filename, handler, logger):
   handler.write(sim, out_filename)
   return sim
 
-def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutlipliers=(2,-1)):
+def writeIterationFile(sim_data, variable_names, out_filename, handler, logger, coeff_mutlipliers=(2,-1)):
   ''' Write iteration file
       @param[in] sim_data - python structure containing simulation data
-      @param[in] filename - string, filename to write
+      @param[in] variable_names - list of strings representing variable names (not counting continuation parameter)
+      @param[in] out_filename - string, filename to write
       @param[in] logger - python logger instance
       @param[in] coeff_mutlipliers - list of 2 multipliers (mult_old, mult_older) 
         to apply to u_old and u_older such that the initial guess for the solution is
@@ -114,6 +119,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
   '''
   sim = copy.deepcopy(sim_data)
   top_block_names = [elt['name'] for elt in sim['children']]
+  nb_vars = len(variable_names)
 
   ### Mesh
   sim = __setMeshBlockFromFile(sim, '{0}.e'.format(SIM_IG2_NAME))
@@ -132,10 +138,11 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     active_index = 0
     active_variables_names = all_variables_names
   else:
-    active_variables_names = __getListFromString(variables['attributes'][active_index]['value'])
+    active_variables_names = getListFromString(variables['attributes'][active_index]['value'])
   # Add initial conditions for all active variables
   for variable in variables['children']:
     if variable['name'] in active_variables_names:
+      index_var_name = variable_names.index(variable['name'])
       index_ic = None
       for index_child, child in enumerate(variable['children']):
         if child['name'] == 'InitialCondition':
@@ -149,7 +156,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
         })
         index_ic = 0
       variable['children'][index_ic]['attributes'] = \
-        [{'name':'function','value':'initial_solution', 'comment':''},
+        [{'name':'function','value':'initial_solution{0}'.format(index_var_name), 'comment':''},
          {'name':'type','value':'FunctionIC', 'comment':''},
          {'name':'variable','value':'{0}'.format(variable['name']), 'comment':''}]
   # add continuation variable
@@ -206,32 +213,36 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     top_block_names.insert(aux_vars_index, 'AuxVariables')
   aux_vars = sim['children'][aux_vars_index]
   all_aux_var_names = [elt['name'] for elt in aux_vars['children']]
-  for label in ['old_temp', 'older_temp', 'directional_derivative', 'u_diff_auxvar']:
-    assert label not in all_aux_var_names
+  assert 'directional_derivative' not in all_aux_var_names
   aux_vars['children'].append({
-    'name':'old_temp',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'initial_from_file_var','value':"temp", 'comment':''}],
-  })
-  aux_vars['children'].append({
-    'name':'older_temp',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'initial_from_file_var','value':"old_temp", 'comment':''}],
-  })
-  aux_vars['children'].append({
-    'name':'directional_derivative',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'family','value':"SCALAR", 'comment':''}],
-  })
-  aux_vars['children'].append({
-    'name':'u_diff_auxvar',
-    'children':[],
-    'comments':[],
-    'attributes':[],
-  })
+      'name':'directional_derivative',
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'family','value':"SCALAR", 'comment':''}],
+    })
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    for label in ['old_{0}'.format(variable_name), 'older_{0}'.format(variable_name), 
+                  'u{0}_diff_auxvar'.format(variable_name)]:
+      assert label not in all_aux_var_names
+    aux_vars['children'].append({
+      'name':'old_{0}'.format(variable_name),
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'initial_from_file_var','value':variable_name, 'comment':''}],
+    })
+    aux_vars['children'].append({
+      'name':'older_{0}'.format(variable_name),
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'initial_from_file_var','value':'old_{0}'.format(variable_name), 'comment':''}],
+    })
+    aux_vars['children'].append({
+      'name':'u{0}_diff_auxvar'.format(k),
+      'children':[],
+      'comments':[],
+      'attributes':[],
+    })
 
   ### Functions
   if 'Functions' in top_block_names:
@@ -247,31 +258,33 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     top_block_names.insert(functions_index, 'Functions')
   functions = sim['children'][functions_index]
   all_functions_names = [elt['name'] for elt in functions['children']]
-  for label in ['u_old', 'u_older', 'initial_solution']:
-    assert label not in all_functions_names
-  functions['children'].append({
-    'name':'u_old',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'type','value':"SolutionFunction", 'comment':''},
-                  {'name':'solution','value':"old_temp_UO", 'comment':''}],
-  })
-  functions['children'].append({
-    'name':'u_older',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'type','value':"SolutionFunction", 'comment':''},
-                  {'name':'solution','value':"older_temp_UO", 'comment':''}],
-  })
-  functions['children'].append({
-    'name':'initial_solution',
-    'children':[],
-    'comments':[],
-    'attributes':[{'name':'type','value':"LinearCombinationFunction", 'comment':''},
-                  {'name':'functions','value':"'u_old u_older'", 'comment':''},
-                  {'name':'w','value':"'{} {}'".\
-                   format(coeff_mutlipliers[0], coeff_mutlipliers[1]), 'comment':''}],
-  })
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    for label in ['u{0}_old'.format(k), 'u{0}_older'.format(k), 'initial_solution{0}'.format(k)]:
+      assert label not in all_functions_names
+    functions['children'].append({
+      'name':'u{0}_old'.format(k),
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'type','value':"SolutionFunction", 'comment':''},
+                    {'name':'solution','value':"old_{0}_UO".format(variable_name), 'comment':''}],
+    })
+    functions['children'].append({
+      'name':'u{0}_older'.format(k),
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'type','value':"SolutionFunction", 'comment':''},
+                    {'name':'solution','value':"older_{0}_UO".format(variable_name), 'comment':''}],
+    })
+    functions['children'].append({
+      'name':'initial_solution{0}'.format(k),
+      'children':[],
+      'comments':[],
+      'attributes':[{'name':'type','value':"LinearCombinationFunction", 'comment':''},
+                    {'name':'functions','value':"'u{0}_old u{0}_older'".format(k), 'comment':''},
+                    {'name':'w','value':"'{} {}'".\
+                     format(coeff_mutlipliers[0], coeff_mutlipliers[1]), 'comment':''}],
+    })
 
   ### Kernels
   # Disable timeDerivative kernels
@@ -318,19 +331,21 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     top_block_names.insert(auxkernels_index, 'AuxKernels')
   auxkernels = sim['children'][auxkernels_index]
   all_auxkernel_names = [elt['name'] for elt in auxkernels['children']]
-  assert 'u_diff_auxkernel' not in all_auxkernel_names
-  auxkernels['children'].append({
-    'name':'u_diff_auxkernel',
-    'children':[],
-    'comments':[],
-    'attributes':[
-      {'name':'type','value':'RedbackDiffVarsAux', 'comment':''},
-      {'name':'variable','value':'u_diff_auxvar', 'comment':''},
-      {'name':'variable_2','value':'old_temp', 'comment':''},
-      {'name':'variable_1','value':'temp', 'comment':''},
-      {'name':'execute_on','value':'timestep_end', 'comment':''}
-      ],
-  })
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    assert 'u{0}_diff_auxkernel'.format(k) not in all_auxkernel_names
+    auxkernels['children'].append({
+      'name':'u{0}_diff_auxkernel'.format(k),
+      'children':[],
+      'comments':[],
+      'attributes':[
+        {'name':'type','value':'RedbackDiffVarsAux', 'comment':''},
+        {'name':'variable','value':'u{0}_diff_auxvar'.format(k), 'comment':''},
+        {'name':'variable_2','value':'old_{0}'.format(variable_name), 'comment':''},
+        {'name':'variable_1','value':variable_name, 'comment':''},
+        {'name':'execute_on','value':'timestep_end', 'comment':''}
+        ],
+    })
 
   ### AuxScalarKernels
   if 'AuxScalarKernels' in top_block_names:
@@ -353,12 +368,16 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     'attributes':[
       {'name':'type','value':'RedbackContinuationTangentAux', 'comment':''},
       {'name':'variable','value':'directional_derivative', 'comment':''},
-      {'name':'nodes','value':'9999', 'comment':'irrelevant value, overwritten by C++ code'},
-      {'name':'sum_var_1','value':'temp', 'comment':''},
-      {'name':'sum_var_old_1','value':'old_temp', 'comment':''},
-      {'name':'sum_var_older_1','value':'older_temp', 'comment':''}
+      {'name':'nodes','value':'9999', 'comment':'irrelevant value, overwritten by C++ code'}
       ],
   })
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    auxscalarkernels['children'][-1]['attributes'].extend([
+      {'name':'sum_var_{0}'.format(k+1),'value':variable_name, 'comment':''},
+      {'name':'sum_var_old_{0}'.format(k+1),'value':'old_{0}'.format(variable_name), 'comment':''},
+      {'name':'sum_var_older_{0}'.format(k+1),'value':'older_{0}'.format(variable_name), 'comment':''}
+    ])
 
   ### Materials
   materials_index = top_block_names.index('Materials')
@@ -387,7 +406,7 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
         'Gets multiplied by value of scalar variable {0}'.format(cont_var_name)
 
   ### PostProcessors
-  sim = __addPostProcessors(sim, add_l2_norm_diff=True)
+  sim = __addPostProcessors(sim, variable_names, add_l2_norm_diff=True)
   pps_index = top_block_names.index('Postprocessors')
 
   ### UserObjects
@@ -404,32 +423,34 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
     top_block_names.insert(userobjects_index, 'UserObjects')
   userobjects = sim['children'][userobjects_index]
   all_userobjects_names = [elt['name'] for elt in userobjects['children']]
-  for label in ['old_temp_UO', 'older_temp_UO']:
-    assert label not in all_userobjects_names
-  userobjects['children'].append({
-    'name':'old_temp_UO',
-    'children':[],
-    'comments':[],
-    'attributes':[
-      {'name':'type','value':'SolutionUserObject', 'comment':''},
-      {'name':'timestep','value':'LATEST', 'comment':''},
-      {'name':'system_variables','value':'temp', 'comment':''},
-      {'name':'mesh','value':'extra_param_initial_guess2.e', 'comment':'will be overwritten by continuation wrapper'},
-      {'name':'execute_on','value':'initial', 'comment':''}
-      ],
-  })
-  userobjects['children'].append({
-    'name':'older_temp_UO',
-    'children':[],
-    'comments':[],
-    'attributes':[
-      {'name':'type','value':'SolutionUserObject', 'comment':''},
-      {'name':'timestep','value':'LATEST', 'comment':''},
-      {'name':'system_variables','value':'old_temp', 'comment':''},
-      {'name':'mesh','value':'extra_param_initial_guess2.e', 'comment':'will be overwritten by continuation wrapper'},
-      {'name':'execute_on','value':'initial', 'comment':''}
-      ],
-  })
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    for label in ['old_{0}_UO'.format(variable_name), 'older_{0}_UO'.format(variable_name)]:
+      assert label not in all_userobjects_names
+    userobjects['children'].append({
+      'name':'old_{0}_UO'.format(variable_name),
+      'children':[],
+      'comments':[],
+      'attributes':[
+        {'name':'type','value':'SolutionUserObject', 'comment':''},
+        {'name':'timestep','value':'LATEST', 'comment':''},
+        {'name':'system_variables','value':variable_name, 'comment':''},
+        {'name':'mesh','value':'extra_param_initial_guess2.e', 'comment':'will be overwritten by continuation wrapper'},
+        {'name':'execute_on','value':'initial', 'comment':''}
+        ],
+    })
+    userobjects['children'].append({
+      'name':'older_{0}_UO'.format(variable_name),
+      'children':[],
+      'comments':[],
+      'attributes':[
+        {'name':'type','value':'SolutionUserObject', 'comment':''},
+        {'name':'timestep','value':'LATEST', 'comment':''},
+        {'name':'system_variables','value':'old_{0}'.format(variable_name), 'comment':''},
+        {'name':'mesh','value':'extra_param_initial_guess2.e', 'comment':'will be overwritten by continuation wrapper'},
+        {'name':'execute_on','value':'initial', 'comment':''}
+        ],
+    })
 
   ### Executioner
   sim = __setExecutionerSteady(sim)
@@ -441,20 +462,24 @@ def writeIterationFile(sim_data, out_filename, handler, logger, coeff_mutliplier
   handler.write(sim, out_filename)
   return sim
 
-def updateMultiplyingCoefficientsForInitialGuess(sim_data, coeff_guess_old, coeff_guess_older):
+def updateMultiplyingCoefficientsForInitialGuess(sim_data, coeff_guess_old, coeff_guess_older, nb_vars):
   ''' Update multiplying coefficients for initial guess of the solution
       @param[in,out] sim_data - python structure with simulation data. Gets modified
+      @param[in] coeff_guess_old - float, multiplying coefficient in front of old_solution
+      @param[in] coeff_guess_older - float, multiplying coefficient in front of older_solution
+      @param[in] nb_vars - int, number of variables
       @return sim_data - updated python structure
   '''
   top_block_names = [elt['name'] for elt in sim_data['children']]
   functions_index = top_block_names.index('Functions')
   functions = sim_data['children'][functions_index]
   all_functions_names = [elt['name'] for elt in functions['children']]
-  index_ig = all_functions_names.index('initial_solution')
-  function_ig = functions['children'][index_ig]
-  attr_names = [attr['name'] for attr in function_ig['attributes']]
-  index_w = attr_names.index('w')
-  function_ig['attributes'][index_w]['value'] = "'{0} {1}'".format(coeff_guess_old, coeff_guess_older)
+  for k in range(nb_vars):
+    index_ig = all_functions_names.index('initial_solution{0}'.format(k))
+    function_ig = functions['children'][index_ig]
+    attr_names = [attr['name'] for attr in function_ig['attributes']]
+    index_w = attr_names.index('w')
+    function_ig['attributes'][index_w]['value'] = "'{0} {1}'".format(coeff_guess_old, coeff_guess_older)
   return sim_data
 
 def __setMeshBlockFromFile(sim_data, mesh_filename):
@@ -497,23 +522,34 @@ def __disableTimeDerivativeKernels(sim_data):
     kernel_name = kernel['name']
     kernel_type = [elt['value'] for elt in kernel['attributes'] if elt['name']=='type'][0]
     if kernel_type != 'TimeDerivative':
-      kernels_to_keep.append(kernel_name)
+      kernels_to_keep.append(kernel_name) 
+      # Note: keeping regardless of active or not. This is changed later
   attribute_names = [attr['name'] for attr in kernels['attributes']]
   active_index = None
   if 'active' in attribute_names:
     active_index = attribute_names.index('active')
+    # fix kernels_to_keep with those marked as active in the input file
+    string_actives = kernels['attributes'][active_index]['value']
+    if string_actives.startswith('"') or string_actives.startswith("'"):
+      string_actives = string_actives[1:]
+    if string_actives.endswith('"') or string_actives.endswith("'"):
+      string_actives = string_actives[0:-1]
+    all_actives = string_actives.split()
+    kernels_to_keep = [elt for elt in kernels_to_keep if elt in all_actives]
   if active_index is None:
     kernels['attributes'].insert(0, {'name':'active','value':"''", 'comment':''})
     active_index = 0
   kernels['attributes'][active_index]['value'] = "'{0}'".format(' '.join(kernels_to_keep))
   return sim_data
 
-def __addPostProcessors(sim_data, add_l2_norm_diff):
+def __addPostProcessors(sim_data, variable_names, add_l2_norm_diff):
   ''' Add PostProcessors required for continuation algorithm
       @param[in,out] sim_data - python structure with simulation data. Gets modified
+      @param[in] variable_names - list of strings representing the variable names (not including continuation parameters)
       @param[in] add_l2_norm_diff - boolean, True if we want to write L2_norm_diff postprocessor
       @return sim_data - updated python structure
   '''
+  nb_vars = len(variable_names)
   # Check if PostProcessors block exists
   top_block_names = [elt['name'] for elt in sim_data['children']]
   if 'Postprocessors' in top_block_names:
@@ -528,61 +564,61 @@ def __addPostProcessors(sim_data, add_l2_norm_diff):
       'attributes':[],
     })
   pps = sim_data['children'][pps_index]
-  index_pp_solution_norm = -1
-  index_pp_l2norm_u = -1
-  index_pp_l2norm_u_diff = -1
+  index_pp_solution_norm = [-1]*nb_vars
+  index_pp_l2norm_u = [-1]*nb_vars
+  index_pp_l2norm_u_diff = [-1]*nb_vars
   all_pps_names = []
   for i_pp, pp in enumerate(pps['children']):
     all_pps_names.append(pp['name'])
-    if pp['name'] == 'solution_norm':
-      index_pp_solution_norm = i_pp
-    if pp['name'] == 'L2_norm_u':
-      index_pp_l2norm_u = i_pp
-    if pp['name'] == 'L2_norm_u_diff':
-      index_pp_l2norm_u_diff = i_pp
-  # Add 'solution_norm'
-  if index_pp_solution_norm < 0:
-    pps['children'].insert(0, {'name':'solution_norm', 'children':[],
-                               'attributes':[{'name':'type','value':'NodalMaxValue', 'comment':''},
-                                             {'name':'variable','value':'temp', 'comment':''}],
-                               # TODO: 'temp' should be replaced by actual variable name
-                               'comments':['L_inf norm of solution for continuation algorithm']})
-  else:
-    # there is already a pp with that name, let's overwrite it just to be sure...
-    pp_solution_norm = pps['children'][index_pp_solution_norm]
-    pp_solution_norm['attributes'] = \
-      [{'name':'type','value':'NodalMaxValue', 'comment':''},
-       {'name':'variable','value':'temp', 'comment':''}]
-    pp_solution_norm['comments'] = ['L_inf norm of solution for continuation algorithm']
-  # Add 'L2_norm_u'
-  if index_pp_l2norm_u < 0:
-    pps['children'].insert(0, {'name':'L2_norm_u', 'children':[],
-                               'attributes':[{'name':'type','value':'NodalL2Norm', 'comment':''},
-                                             {'name':'variable','value':'temp', 'comment':''}],
-                               # TODO: 'temp' should be replaced by actual variable name
-                               'comments':['L2 norm of solution for continuation algorithm']})
-  else:
-    # there is already a pp with that name, let's overwrite it just to be sure...
-    pp_sol_l2norm = pps['children'][index_pp_l2norm_u]
-    pp_sol_l2norm['attributes'] = \
-      [{'name':'type','value':'NodalL2Norm', 'comment':''},
-       {'name':'variable','value':'temp', 'comment':''}]
-    pp_sol_l2norm['comments'] = ['L2 norm of solution for continuation algorithm']
-  # Add 'L2_norm_u_diff'
-  if add_l2_norm_diff:
-    if index_pp_l2norm_u_diff < 0:
-      pps['children'].insert(0, {'name':'L2_norm_u_diff', 'children':[],
-                                 'attributes':[{'name':'type','value':'NodalL2Norm', 'comment':''},
-                                               {'name':'variable','value':'u_diff_auxvar', 'comment':''}],
-                                 # TODO: 'temp' should be replaced by actual variable name
-                                 'comments':['L2 norm of solution for continuation algorithm']})
+    for k in range(nb_vars):
+      if pp['name'] == 'solution{0}_norm'.format(k):
+        index_pp_solution_norm[k] = i_pp
+      if pp['name'] == 'L2_norm_u{0}'.format(k):
+        index_pp_l2norm_u[k] = i_pp
+      if pp['name'] == 'L2_norm_u{0}_diff'.format(k):
+        index_pp_l2norm_u_diff[k] = i_pp
+  for k in range(nb_vars):
+    variable_name = variable_names[k]
+    # Add 'solution_norm'
+    if index_pp_solution_norm[k] < 0:
+      pps['children'].insert(0, {'name':'solution{0}_norm'.format(k), 'children':[],
+                                 'attributes':[{'name':'type','value':'NodalMaxValue', 'comment':''},
+                                               {'name':'variable','value':variable_name, 'comment':''}],
+                                 'comments':['L_inf norm of solution {0} for continuation algorithm'.format(k)]})
     else:
       # there is already a pp with that name, let's overwrite it just to be sure...
-      pp_sol_l2norm = pps['children'][index_pp_l2norm_u_diff]
+      pp_solution_norm = pps['children'][index_pp_solution_norm[k]]
+      pp_solution_norm['attributes'] = \
+        [{'name':'type','value':'NodalMaxValue', 'comment':''},
+         {'name':'variable','value':variable_name, 'comment':''}]
+      pp_solution_norm['comments'] = ['L_inf norm of solution {0} for continuation algorithm'.format(k)]
+    # Add 'L2_norm_u'
+    if index_pp_l2norm_u[k] < 0:
+      pps['children'].insert(0, {'name':'L2_norm_u{0}'.format(k), 'children':[],
+                                 'attributes':[{'name':'type','value':'NodalL2Norm', 'comment':''},
+                                               {'name':'variable','value':variable_name, 'comment':''}],
+                                 'comments':['L2 norm of solution {0} for continuation algorithm'.format(k)]})
+    else:
+      # there is already a pp with that name, let's overwrite it just to be sure...
+      pp_sol_l2norm = pps['children'][index_pp_l2norm_u[k]]
       pp_sol_l2norm['attributes'] = \
         [{'name':'type','value':'NodalL2Norm', 'comment':''},
-         {'name':'variable','value':'u_diff_auxvar', 'comment':''}]
-      pp_sol_l2norm['comments'] = ['L2 norm of delta solution for continuation algorithm']
+         {'name':'variable','value':variable_name, 'comment':''}]
+      pp_sol_l2norm['comments'] = ['L2 norm of solution {0} for continuation algorithm'.format(k)]
+    # Add 'L2_norm_u_diff' (as many as nb_vars)
+    if add_l2_norm_diff:
+      if index_pp_l2norm_u_diff[k] < 0:
+        pps['children'].insert(0, {'name':'L2_norm_u{0}_diff'.format(k), 'children':[],
+                                   'attributes':[{'name':'type','value':'NodalL2Norm', 'comment':''},
+                                                 {'name':'variable','value':'u{0}_diff_auxvar'.format(k), 'comment':''}],
+                                   'comments':['L2 norm of delta solution {0} for continuation algorithm'.format(k)]})
+      else:
+        # there is already a pp with that name, let's overwrite it just to be sure...
+        pp_sol_l2norm = pps['children'][index_pp_l2norm_u_diff[k]]
+        pp_sol_l2norm['attributes'] = \
+          [{'name':'type','value':'NodalL2Norm', 'comment':''},
+           {'name':'variable','value':'u{0}_diff_auxvar'.format(k), 'comment':''}]
+        pp_sol_l2norm['comments'] = ['L2 norm of delta solution {0} for continuation algorithm'.format(k)]
   # find active postprocessors
   attribute_names = [attr['name'] for attr in pps['attributes']]
   active_index = None
@@ -594,13 +630,14 @@ def __addPostProcessors(sim_data, add_l2_norm_diff):
     active_index = 0
     active_pps_names = all_pps_names
   else:
-    active_pps_names = __getListFromString(pps['attributes'][active_index]['value'])
+    active_pps_names = getListFromString(pps['attributes'][active_index]['value'])
   # update/create list of active post processors
-  for label in ['solution_norm', 'L2_norm_u']:
-    if label not in active_pps_names:
-      active_pps_names.append(label)
-  if add_l2_norm_diff:
-    active_pps_names.append('L2_norm_u_diff')
+  for k in range(nb_vars):
+    for label in ['solution{0}_norm'.format(k), 'L2_norm_u{0}'.format(k)]:
+      if label not in active_pps_names:
+        active_pps_names.append(label)
+    if add_l2_norm_diff:
+      active_pps_names.append('L2_norm_u{0}_diff'.format(k))
   text = ' '.join(active_pps_names)
   if len(active_pps_names) > 1:
     text = "'{0}'".format(text)
@@ -679,22 +716,12 @@ def __updateOutputs(sim_data, base_filename):
     outputs['attributes'].append({'name':'execute_on','value':"'initial timestep_end'", 'comment':''})
   return sim_data
 
-def __getListFromString(text):
-  ''' Get list of strings from text representing a list of items
-      @param[in] text - string, text to parse
-      @return list - python list of strings
-  '''
-  tmp = text.strip()
-  if tmp.startswith("'") and tmp.endswith("'"):
-    tmp = tmp[1:-1]
-  list = tmp.split(' ')
-  return list
-
 if __name__ == "__main__":
   logger = getLogger('sim', 'running_tmp/log.txt', logging.INFO)
   handler = MooseInputFileRW()
-  data_sim = handler.read('benchmark_1_T/bench1_a.i')
-  sim_1 = writeInitialGuessFile(1, data_sim, 'running_tmp/extra_param_initial_guess1.i', handler, logger)
-  sim_2 = writeInitialGuessFile(2, data_sim, 'running_tmp/extra_param_initial_guess2.i', handler, logger)
-  sim_i = writeIterationFile(data_sim, 'running_tmp/extra_param_iteration.i', handler, logger)
+  data_sim = handler.read('benchmark_4_TH/bench_TH.i')
+  variable_names = getListOfActiveVariableNames(data_sim, logger)
+  sim_1 = writeInitialGuessFile(1, data_sim, variable_names, 'running_tmp/extra_param_initial_guess1.i', handler, logger)
+  sim_2 = writeInitialGuessFile(2, data_sim, variable_names, 'running_tmp/extra_param_initial_guess2.i', handler, logger)
+  sim_i = writeIterationFile(data_sim, variable_names, 'running_tmp/extra_param_iteration.i', handler, logger)
   print 'Finished'
