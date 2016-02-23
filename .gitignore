@@ -14,3 +14,7 @@ input_redbackcont1D_coarser.xml
 error_output.txt
 bench1_a_out.csv
 bench1_a_out.e
+bench_TH_out.csv
+bench_TH_out.e
+*.e
+tests

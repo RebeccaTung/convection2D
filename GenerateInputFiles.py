@@ -401,7 +401,7 @@ def writeIterationFile(sim_data, variable_names, out_filename, handler, logger, 
         index_cont_param = index_cont_param + 1
         material['attributes'].insert\
           (index_cont_param, {'name':CONT_PARAM_NAME,'value':'', 'comment':''})
-      material['attributes'][index_cont_param]['value'] = '1e-4'
+      material['attributes'][index_cont_param]['value'] = '4.5399929762e-5' #rescaling Gr so that it matches SuCCoMBe results
       material['attributes'][index_cont_param]['comment'] = \
         'Gets multiplied by value of scalar variable {0}'.format(cont_var_name)
 
@@ -719,7 +719,7 @@ def __updateOutputs(sim_data, base_filename):
 if __name__ == "__main__":
   logger = getLogger('sim', 'running_tmp/log.txt', logging.INFO)
   handler = MooseInputFileRW()
-  data_sim = handler.read('benchmark_4_TH/bench_TH.i')
+  data_sim = handler.read('benchmark_9_THC/bench_THC_no_poro.i')
   variable_names = getListOfActiveVariableNames(data_sim, logger)
   sim_1 = writeInitialGuessFile(1, data_sim, variable_names, 'running_tmp/extra_param_initial_guess1.i', handler, logger)
   sim_2 = writeInitialGuessFile(2, data_sim, variable_names, 'running_tmp/extra_param_initial_guess2.i', handler, logger)

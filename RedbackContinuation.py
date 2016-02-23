@@ -264,6 +264,7 @@ def writeResultsToCsvFile(results, step_index):
     csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index]['lambda']),
                         '{0:3.16e}'.format(results[step_index]['solution_norm'][0])])
     # TODO: which solution norm do we use?
+    # SOT: I chose temp for this case of benchmark_9_THC
 
 def parseScurveCsv(parameters, logger):
   ''' Parse S-curve csv file
@@ -372,15 +373,44 @@ def runContinuation(parameters, logger):
   results[step_index]['lambda'] = parameters['lambda_initial_2']
   writeResultsToCsvFile(results, step_index)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
-  ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
+  
+  #calculating the ds of the first two iterations.
+  #TODO decide if this is useful only for the first step or needs to be added to the predictor at every step
+  #ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
   
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
   while not finished:
     #raw_input('About to start the first iterative step.\nPress enter to continue...')
+    # calculating ds_old from the norm of the previous solutions instead of keeping the theoretical value (user input)
+    # seems to be making the predictor better, steps are equal except when we enter the part of the algorithm where step is decreasing
+    ds_old = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
+    
+    #testing if ds is computed properly for debugging purposes
+    var_diff_test = 0
+    for k in range(nb_vars):
+      var_diff_test += results[step_index]['L2_norm_u_diff'][k]**2
+    
+    dlambda = lambda_old - lambda_older
+    du = math.sqrt(var_diff_test)
+    dp = results[step_index]['L2_norm_u_diff'][0]
+    dT = results[step_index]['L2_norm_u_diff'][1]
+    ds_recomputed = math.sqrt(dp**2 + dT**2 + dlambda**2)
+    ds_test = abs(ds_old - ds_recomputed)
+    print ("ds_test =", ds_test)
+    assert ds_test <= 1e-16, "error in ds computation"
+    
+    # calculating and printing the theoretical vs the computed ds value
+    print("ds =", ds)
+    ds_divergence = abs(ds-ds_old)
+    print ("ds_divergence = ", ds_divergence)
+    
     step_index += 1
-    ds_old = ds
+    # ds_old = ds
+    #print ("ds_old = ", ds_old)
     ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index, logger)
+    #print("ds =", ds)
+    
     step_succeeded = False
     attempt_index = 0
     while not step_succeeded and attempt_index < MAX_ATTEMPTS:
@@ -413,6 +443,8 @@ def runContinuation(parameters, logger):
       try:
         logger.debug(command1)
         stdout = subprocess.check_output(command1.split())
+        #print stdout
+        #sys.exit(1)
         checkMooseOutput(stdout, parameters['error_filename'], logger)
         # if it passes that point with no Exception raised, then attempt succeeded
         step_succeeded = True
@@ -448,21 +480,22 @@ def runContinuation(parameters, logger):
 if __name__ == "__main__":
   # User input
   outpud_dir = '.'
-  ds = 1e-1
+  ds = 1e-2
   parameters = {
-    'lambda_initial_1':1e-8, #ds,
-    'lambda_initial_2':2e-8, #2*ds,
+    'lambda_initial_1':1e-6, #ds,
+    'lambda_initial_2':2e-6, #2*ds,
     'ds_initial':ds,
-    's_max':15,
+    's_max':0.1,
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
-    'input_file':'benchmark_1_T/bench1_a.i',#'benchmark_4_TH/bench_TH.i',
+    'input_file':'benchmark_9_THC/bench_THC_sot_ss_test.i',#'benchmark_1_T/bench1_a.i',
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
     'error_filename':'error_output.txt',
     'plot_s_curve':False,
     'ref_s_curve':'benchmark_1_T/ref.csv'
+
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
