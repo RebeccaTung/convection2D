@@ -106,12 +106,14 @@ def writeInitialGuessFile(index_ig, sim_data, variable_names, out_filename, hand
   handler.write(sim, out_filename)
   return sim
 
-def writeIterationFile(sim_data, variable_names, out_filename, handler, logger, coeff_mutlipliers=(2,-1)):
+def writeIterationFile(sim_data, variable_names, out_filename, handler, logger, 
+                       parameters, coeff_mutlipliers=(2,-1)):
   ''' Write iteration file
       @param[in] sim_data - python structure containing simulation data
       @param[in] variable_names - list of strings representing variable names (not counting continuation parameter)
       @param[in] out_filename - string, filename to write
       @param[in] logger - python logger instance
+      @param[in] parameters - dictionary of input parameters (input from runContinuation())
       @param[in] coeff_mutlipliers - list of 2 multipliers (mult_old, mult_older) 
         to apply to u_old and u_older such that the initial guess for the solution is
         u_guess = mult_old*u_old + mult_older*u_older
@@ -401,7 +403,8 @@ def writeIterationFile(sim_data, variable_names, out_filename, handler, logger, 
         index_cont_param = index_cont_param + 1
         material['attributes'].insert\
           (index_cont_param, {'name':CONT_PARAM_NAME,'value':'', 'comment':''})
-      material['attributes'][index_cont_param]['value'] = '4.5399929762e-5' #rescaling Gr so that it matches SuCCoMBe results
+      material['attributes'][index_cont_param]['value'] = '{0}'.\
+        format(parameters['rescaling_factor'])
       material['attributes'][index_cont_param]['comment'] = \
         'Gets multiplied by value of scalar variable {0}'.format(cont_var_name)
 
@@ -719,7 +722,7 @@ def __updateOutputs(sim_data, base_filename):
 if __name__ == "__main__":
   logger = getLogger('sim', 'running_tmp/log.txt', logging.INFO)
   handler = MooseInputFileRW()
-  data_sim = handler.read('benchmark_9_THC/bench_THC_no_poro.i')
+  data_sim = handler.read('benchmark_4_TH/bench_TH.i')
   variable_names = getListOfActiveVariableNames(data_sim, logger)
   sim_1 = writeInitialGuessFile(1, data_sim, variable_names, 'running_tmp/extra_param_initial_guess1.i', handler, logger)
   sim_2 = writeInitialGuessFile(2, data_sim, variable_names, 'running_tmp/extra_param_initial_guess2.i', handler, logger)
