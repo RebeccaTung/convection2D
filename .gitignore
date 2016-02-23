@@ -17,4 +17,4 @@ bench1_a_out.e
 bench_TH_out.csv
 bench_TH_out.e
 *.e
-tests
+error.txt
