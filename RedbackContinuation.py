@@ -155,7 +155,8 @@ def runInitialSimulation1(parameters, logger):
               '-i {input_i} Outputs/csv=true '\
               'Materials/adim_rock/gr={gr}'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file, gr=parameters['lambda_initial_1'])
+                      input_i=input_file, 
+                      gr=parameters['lambda_initial_1']*parameters['rescaling_factor'])
   try:
     logger.debug(command1)
     stdout = subprocess.check_output(command1.split())
@@ -174,7 +175,8 @@ def runInitialSimulation2(parameters, logger):
               '-i {input_i} Outputs/csv=true '\
               'Materials/adim_rock/gr={gr}'\
               .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file, gr=parameters['lambda_initial_2'])
+                      input_i=input_file, 
+                      gr=parameters['lambda_initial_2']*parameters['rescaling_factor'])
   try:
     logger.debug(command2)
     stdout = subprocess.check_output(command2.split())
@@ -363,7 +365,7 @@ def runContinuation(parameters, logger):
   runInitialSimulation1(parameters, logger)
   lambda_old = parameters['lambda_initial_1']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger)
-  results[step_index]['lambda'] = parameters['lambda_initial_1']
+  results[step_index]['lambda'] = parameters['lambda_initial_1']*parameters['rescaling_factor']
   writeResultsToCsvFile(results, step_index, parameters)
 
   step_index += 1
@@ -372,7 +374,7 @@ def runContinuation(parameters, logger):
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars, logger)
-  results[step_index]['lambda'] = parameters['lambda_initial_2']
+  results[step_index]['lambda'] = parameters['lambda_initial_2']*parameters['rescaling_factor']
   writeResultsToCsvFile(results, step_index, parameters)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
   ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
@@ -381,6 +383,7 @@ def runContinuation(parameters, logger):
   finished = False
   while not finished:
     #raw_input('About to start the first iterative step.\nPress enter to continue...')
+    #ds_old = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
     step_index += 1
     ds_old = ds
     ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index, logger)
@@ -433,6 +436,7 @@ def runContinuation(parameters, logger):
     lambda_older = lambda_old
     results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME), nb_vars, logger)
     lambda_old = results[step_index]['lambda']
+    results[step_index]['lambda'] *= parameters['rescaling_factor']
     writeResultsToCsvFile(results, step_index, parameters)
 
     # increment s
