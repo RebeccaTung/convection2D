@@ -97,8 +97,8 @@ def plotSCurve(parameters, logger):
 
 if __name__ == "__main__":
   parameters = {
-    'result_curve_csv':'input_files/benchmark_1_T/S_curve.csv',
-    'ref_s_curve':'input_files/benchmark_1_T/ref.csv'
+    'result_curve_csv':'input_files/benchmark_9_THC/S_curve.csv',
+    'ref_s_curve':''
   }
   plotSCurve(parameters, getLogger('plotSCurve', level=logging.INFO))
   print 'Finished'
