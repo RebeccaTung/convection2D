@@ -387,11 +387,21 @@ def runContinuation(parameters, logger):
     step_index += 1
     ds_old = ds
     ds = getInitialStepLength(ds_old, parameters['ds_initial'], attempt_index, logger)
+    previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
+    if step_index > 2:
+      previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
+    # save that previous exodus file in case the coming step requires multiple attempts
+    root_name, ext = os.path.splitext(previous_exodus_filename)
+    backup_exodus_filename = root_name + "_BACKUP" + ext
+    shutil.copyfile(previous_exodus_filename, backup_exodus_filename)
     step_succeeded = False
     attempt_index = 0
     while not step_succeeded and attempt_index < MAX_ATTEMPTS:
       logger.info('Step {0} (attempt {1}), s={2}, ds={3}'\
                   .format(step_index, attempt_index, s, ds))
+      # use backup file if not in the first attempt
+      if attempt_index > 0:
+        shutil.copyfile(backup_exodus_filename, previous_exodus_filename)
       # Calculate multiplying coefficients of old and older solutions for coming initial guess
       coeff_mult = ds/ds_old
       coeff_guess_old = 1 + coeff_mult
@@ -401,9 +411,6 @@ def runContinuation(parameters, logger):
         (sim_i, coeff_guess_old, coeff_guess_older, nb_vars)
       handler.write(sim_i, parameters['input_iteration'])
       # run simulation
-      previous_exodus_filename = '{0}.e'.format(SIM_IG2_NAME)
-      if step_index > 2:
-        previous_exodus_filename = '{0}.e'.format(SIM_ITER_NAME)
       command1 = '{exec_loc} --n-threads={nb_procs} '\
                   '-i {input_i} Outputs/csv=true Mesh/file={previous_exodus} '\
                   'Variables/lambda/initial_condition={lambda_IC} '\

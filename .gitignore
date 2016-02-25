@@ -18,3 +18,4 @@ bench_TH_out.csv
 bench_TH_out.e
 *.e
 error.txt
+bench_THC_no_poro_out.csv
