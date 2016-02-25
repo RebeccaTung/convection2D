@@ -436,8 +436,8 @@ def runContinuation(parameters, logger):
         attempt_index += 1
         ds = ds/4.
     if attempt_index >= MAX_ATTEMPTS:
-      logger.error('Execution failed after {0} attempts! (Iteration step={0} with ds={1})'\
-                   .format(attempt_index, step_index, ds))
+      logger.error('Execution failed after {0} attempts!'\
+                   .format(attempt_index))
       sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
