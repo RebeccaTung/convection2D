@@ -10,7 +10,8 @@ from CheckMooseOutput import checkMooseOutput, MooseException
 from PlotSCurve import plotSCurve
 from MooseInputFileRW import MooseInputFileRW
 from GenerateInputFiles import writeInitialGuessFile, writeIterationFile, \
-  SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME, updateMultiplyingCoefficientsForInitialGuess
+  CONT_PARAM_NAMES, SIM_IG1_NAME, SIM_IG2_NAME, SIM_ITER_NAME, \
+  updateMultiplyingCoefficientsForInitialGuess
 
 def createRedbackFilesRequired(parameters, handler, logger):
   ''' Create Redback files required to run continuation
@@ -55,26 +56,31 @@ def createRedbackFilesRequired(parameters, handler, logger):
   parameters['input_IG1'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG1_NAME))
   parameters['input_IG2'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
   parameters['input_iteration'] = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
-  sim_1 = writeInitialGuessFile(1, data_sim, variable_names, parameters['input_IG1'], handler, logger)
-  sim_2 = writeInitialGuessFile(2, data_sim, variable_names, parameters['input_IG2'], handler, logger)
+  sim_1 = writeInitialGuessFile(1, data_sim, variable_names, parameters, handler, logger)
+  sim_2 = writeInitialGuessFile(2, data_sim, variable_names, parameters, handler, logger)
   sim_i = writeIterationFile(data_sim, variable_names, parameters['input_iteration'], handler, logger, parameters)
   return sim_1, sim_2, sim_i, nb_vars
 
 def checkAndCleanInputParameters(parameters, logger):
-  ''' Check input parameters provided by user
+  ''' Check input parameters provided by user and add default values where needed.
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
       @return: found_error - boolean, True if any error was found
   '''
+  continuation_variables = ['Gruntfest', 'Lewis'] # Acceptable continuation variables
   found_error = False
   # Check all parameters are provided
   if type(parameters) != dict:
     logger.error('"parameters" must be of type dictionary, not {0}!'.format(type(parameters)))
     return True
+  # add defaults
+  if 'continuation_variable' not in parameters:
+    parameters['continuation_variable'] = 'Gruntfest'
+  # check entries
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor']
   params_int = ['nb_threads']
   params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
-                'error_filename']
+                'error_filename', 'continuation_variable']
   params_bool = ['plot_s_curve']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
@@ -107,6 +113,10 @@ def checkAndCleanInputParameters(parameters, logger):
     if not type(parameters[param]) == bool:
       logger.error('Input parameter "{0}={1}" should be a boolean!'.format(param, parameters[param]))
       found_error = True
+  # Check continuation variable
+  if not parameters['continuation_variable'] in continuation_variables:
+    logger.error('The continuation variable must be in {0}'.format(continuation_variables))
+    found_error = True
   # Ensure that first two continuation parameter are sorted
   if not os.path.isdir(parameters['running_dir']):
     os.mkdir(parameters['running_dir'])
@@ -145,18 +155,42 @@ def checkAndCleanInputParameters(parameters, logger):
 
   return found_error
 
-def runInitialSimulation1(parameters, logger):
+def getRedbackMaterialNames(sim_data, logger):
+  ''' Get list of all RedbackMaterial names in this simulation
+      @param[in] sim_data - python structure containing simulation data.
+      @param[in] logger - python logger instance
+      @return: redback_mat_names - list of material names
+  '''
+  top_block_names = [elt['name'] for elt in sim_data['children']]
+  materials_index = top_block_names.index('Materials')
+  materials = sim_data['children'][materials_index]
+  redback_mat_names = []
+  for material in materials['children']:
+    material_name = material['name']
+    for elt in material['attributes']:
+      if elt['name']=='type' and elt['value']=='RedbackMaterial':
+        redback_mat_names.append(material_name)
+  return redback_mat_names
+
+def runInitialSimulation1(parameters, sim_data, logger):
   ''' Run initial simulation (the very first one) with provided value of lambda
       @param[in] parameters - dictionary of input parameters
+      @param[in] sim_data - python structure containing simulation data.
       @param[in] logger - python logger instance
   '''
+  cont_param_name = CONT_PARAM_NAMES[parameters['continuation_variable']]
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG1_NAME))
+  # Find all materials
+  redback_mat_names = getRedbackMaterialNames(sim_data, logger)
+  # Form command
   command1 = '{exec_loc} --n-threads={nb_procs} '\
-              '-i {input_i} Outputs/csv=true '\
-              'Materials/adim_rock/gr={gr}'\
-              .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file, 
-                      gr=parameters['lambda_initial_1']*parameters['rescaling_factor'])
+              '-i {input_i} Outputs/csv=true '.\
+              format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
+                     input_i=input_file)
+  for material_name in redback_mat_names:
+    command1 += 'Materials/{mat_name}/{attr_name}={value} '\
+      .format(mat_name=material_name, attr_name=cont_param_name,
+              value=parameters['lambda_initial_1']*parameters['rescaling_factor'])
   try:
     logger.debug(command1)
     stdout = subprocess.check_output(command1.split())
@@ -165,18 +199,25 @@ def runInitialSimulation1(parameters, logger):
     logger.error('Execution failed! (First initialisation step)')
     sys.exit(1)
 
-def runInitialSimulation2(parameters, logger):
+def runInitialSimulation2(parameters, sim_data, logger):
   ''' Run initial simulation (the second one) with provided value of lambda
       @param[in] parameters - dictionary of input parameters
+      @param[in] sim_data - python structure containing simulation data.
       @param[in] logger - python logger instance
   '''
+  cont_param_name = CONT_PARAM_NAMES[parameters['continuation_variable']]
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_IG2_NAME))
+  # Find all materials
+  redback_mat_names = getRedbackMaterialNames(sim_data, logger)
+  # Form command
   command2 = '{exec_loc} --n-threads={nb_procs} '\
-              '-i {input_i} Outputs/csv=true '\
-              'Materials/adim_rock/gr={gr}'\
-              .format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
-                      input_i=input_file, 
-                      gr=parameters['lambda_initial_2']*parameters['rescaling_factor'])
+              '-i {input_i} Outputs/csv=true '.\
+              format(nb_procs=parameters['nb_threads'], exec_loc=parameters['exec_loc'],
+                     input_i=input_file)
+  for material_name in redback_mat_names:
+    command2 += 'Materials/{mat_name}/{attr_name}={value} '\
+      .format(mat_name=material_name, attr_name=cont_param_name,
+              value=parameters['lambda_initial_2']*parameters['rescaling_factor'])
   try:
     logger.debug(command2)
     stdout = subprocess.check_output(command2.split())
@@ -346,7 +387,7 @@ def runContinuation(parameters, logger):
   '''
   MAX_ATTEMPTS = 8 # Maximum attempts to try and solve any given iteration
   logger.info('='*20+' Starting continuation... '+'='*20)
-  found_error = checkAndCleanInputParameters(parameters, logger)
+  found_error = checkAndCleanInputParameters(parameters, logger) # adds missing defaults too
   if found_error:
     return
   handler = MooseInputFileRW()
@@ -362,7 +403,7 @@ def runContinuation(parameters, logger):
   results = {} # key=step_index, value=[lambda. max_temp]
 
   logger.info('Step {0} (first initial)'.format(step_index))
-  runInitialSimulation1(parameters, logger)
+  runInitialSimulation1(parameters, sim_1, logger)
   lambda_old = parameters['lambda_initial_1']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger)
   results[step_index]['lambda'] = parameters['lambda_initial_1']*parameters['rescaling_factor']
@@ -370,7 +411,7 @@ def runContinuation(parameters, logger):
 
   step_index += 1
   logger.info('Step {0} (second initial)'.format(step_index))
-  runInitialSimulation2(parameters, logger)
+  runInitialSimulation2(parameters, sim_2, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars, logger)
@@ -464,6 +505,7 @@ if __name__ == "__main__":
   outpud_dir = '.'
   ds = 1e-1
   parameters = {
+    'continuation_variable':'Gruntfest', # in ['Gruntfest', 'Lewis']
     'lambda_initial_1':1e-8, #ds,
     'lambda_initial_2':2e-8, #2*ds,
     'ds_initial':ds,

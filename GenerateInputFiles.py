@@ -11,14 +11,17 @@ SIM_IG1_NAME = 'extra_param_initial_guess1'
 SIM_IG2_NAME = 'extra_param_initial_guess2'
 SIM_ITER_NAME = 'extra_param_iteration'
 
-CONT_PARAM_NAME = 'gr' # hardcoded for now, should disappear (TODO)
+CONT_PARAM_NAMES = { # key=continuation_variable, value=correspoding Material attribute name 
+  'Gruntfest':'gr',
+  'Lewis':'ref_lewis_nb'
+}
 
-def writeInitialGuessFile(index_ig, sim_data, variable_names, out_filename, handler, logger):
+def writeInitialGuessFile(index_ig, sim_data, variable_names, parameters, handler, logger):
   ''' Write first or second initial guess file
       @param[in] index_ig - int, 1 or 2 (to distinguish first and second initial guess simulation)
       @param[in] sim_data - python structure containing simulation data.
       @param[in] variable_names - list of strings representing variable names (not counting continuation parameter)
-      @param[in] out_filename - string, filename to write
+      @param[in] parameters - dictionary of input parameters (input from runContinuation())
       @param[in] handler - instance of MooseInputFileRW
       @param[in] logger - python logger instance
       @return sim_data - modified python structure
@@ -60,14 +63,22 @@ def writeInitialGuessFile(index_ig, sim_data, variable_names, out_filename, hand
 
   ### Materials
   # Change material (just to let user see more easily that this parameter will get overwritten)
+  cont_param_name = CONT_PARAM_NAMES[parameters['continuation_variable']]
   materials_index = top_block_names.index('Materials')
   materials = sim['children'][materials_index]
   for material in materials['children']:
     material_name = material['name']
+    found_it = False
     for elt in material['attributes']:
-      if elt['name']==CONT_PARAM_NAME:
+      if elt['name']==cont_param_name:
         elt['value'] = '9999'
         elt['comment'] = 'will be overwritten by continuation wrapper'
+        found_it = True
+        break
+    if not found_it:
+      material['attributes'].\
+        append({'name':cont_param_name, 'value':'9999',
+                'comment':'will be overwritten by continuation wrapper'})
 
   ### AuxKernels
   if index_ig == 2:
@@ -103,6 +114,9 @@ def writeInitialGuessFile(index_ig, sim_data, variable_names, out_filename, hand
   outputs_index = top_block_names.index('Outputs')
 
   # write to file
+  out_filename = parameters['input_IG1']
+  if index_ig == 2:
+    out_filename = parameters['input_IG2']
   handler.write(sim, out_filename)
   return sim
 
@@ -388,21 +402,30 @@ def writeIterationFile(sim_data, variable_names, out_filename, handler, logger,
     mat_attr_names = [elt['name'] for elt in material['attributes']]
     type_index = mat_attr_names.index('type')
     if material['attributes'][type_index]['value'] == 'RedbackMaterial':
+      # continuation variable
+      if 'continuation_variable' in mat_attr_names:
+        index_cont_var = mat_attr_names.index('continuation_variable')
+      else:
+        index_cont_var = type_index + 1
+        material['attributes'].insert(index_cont_var, {'name':'continuation_variable', 'value':'', 'comment':''})
+        mat_attr_names.insert(index_cont_var, 'continuation_variable')
+      material['attributes'][index_cont_var]['value'] = parameters['continuation_variable']
       # add continuation parameter
       if 'continuation_parameter' in mat_attr_names:
         index_cont_param = mat_attr_names.index('continuation_parameter')
       else:
-        index_cont_param = type_index + 1
+        index_cont_param = index_cont_var + 1
         material['attributes'].insert(index_cont_param, {'name':'continuation_parameter','value':'', 'comment':''})
         mat_attr_names.insert(index_cont_param, 'continuation_parameter')
       material['attributes'][index_cont_param]['value'] = cont_var_name
-      # set value of cont_param_name to 1
-      if CONT_PARAM_NAME in mat_attr_names:
-        index_cont_param = mat_attr_names.index(CONT_PARAM_NAME)
+      # set value of cont_param_name as requested by user
+      cont_param_name = CONT_PARAM_NAMES[parameters['continuation_variable']]
+      if cont_param_name in mat_attr_names:
+        index_cont_param = mat_attr_names.index(cont_param_name)
       else:
         index_cont_param = index_cont_param + 1
         material['attributes'].insert\
-          (index_cont_param, {'name':CONT_PARAM_NAME,'value':'', 'comment':''})
+          (index_cont_param, {'name':cont_param_name,'value':'', 'comment':''})
       material['attributes'][index_cont_param]['value'] = '{0}'.\
         format(parameters['rescaling_factor'])
       material['attributes'][index_cont_param]['comment'] = \
