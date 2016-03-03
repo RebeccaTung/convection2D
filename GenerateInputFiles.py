@@ -590,34 +590,34 @@ def __addPostProcessors(sim_data, variable_names, add_l2_norm_diff):
       'attributes':[],
     })
   pps = sim_data['children'][pps_index]
-  index_pp_solution_norm = [-1]*nb_vars
+  index_pp_L_inf_norm = [-1]*nb_vars
   index_pp_l2norm_u = [-1]*nb_vars
   index_pp_l2norm_u_diff = [-1]*nb_vars
   all_pps_names = []
   for i_pp, pp in enumerate(pps['children']):
     all_pps_names.append(pp['name'])
     for k in range(nb_vars):
-      if pp['name'] == 'solution{0}_norm'.format(k):
-        index_pp_solution_norm[k] = i_pp
+      if pp['name'] == 'L_inf_norm_u{0}'.format(k):
+        index_pp_L_inf_norm[k] = i_pp
       if pp['name'] == 'L2_norm_u{0}'.format(k):
         index_pp_l2norm_u[k] = i_pp
       if pp['name'] == 'L2_norm_u{0}_diff'.format(k):
         index_pp_l2norm_u_diff[k] = i_pp
   for k in range(nb_vars):
     variable_name = variable_names[k]
-    # Add 'solution_norm'
-    if index_pp_solution_norm[k] < 0:
-      pps['children'].insert(0, {'name':'solution{0}_norm'.format(k), 'children':[],
+    # Add 'L_inf_norm_u'
+    if index_pp_L_inf_norm[k] < 0:
+      pps['children'].insert(0, {'name':'L_inf_norm_u{0}'.format(k), 'children':[],
                                  'attributes':[{'name':'type','value':'NodalMaxValue', 'comment':''},
                                                {'name':'variable','value':variable_name, 'comment':''}],
                                  'comments':['L_inf norm of solution {0} for continuation algorithm'.format(k)]})
     else:
       # there is already a pp with that name, let's overwrite it just to be sure...
-      pp_solution_norm = pps['children'][index_pp_solution_norm[k]]
-      pp_solution_norm['attributes'] = \
+      pp_L_inf_norm = pps['children'][index_pp_L_inf_norm[k]]
+      pp_L_inf_norm['attributes'] = \
         [{'name':'type','value':'NodalMaxValue', 'comment':''},
          {'name':'variable','value':variable_name, 'comment':''}]
-      pp_solution_norm['comments'] = ['L_inf norm of solution {0} for continuation algorithm'.format(k)]
+      pp_L_inf_norm['comments'] = ['L_inf norm of solution {0} for continuation algorithm'.format(k)]
     # Add 'L2_norm_u'
     if index_pp_l2norm_u[k] < 0:
       pps['children'].insert(0, {'name':'L2_norm_u{0}'.format(k), 'children':[],
@@ -659,7 +659,7 @@ def __addPostProcessors(sim_data, variable_names, add_l2_norm_diff):
     active_pps_names = getListFromString(pps['attributes'][active_index]['value'])
   # update/create list of active post processors
   for k in range(nb_vars):
-    for label in ['solution{0}_norm'.format(k), 'L2_norm_u{0}'.format(k)]:
+    for label in ['L_inf_norm_u{0}'.format(k), 'L2_norm_u{0}'.format(k)]:
       if label not in active_pps_names:
         active_pps_names.append(label)
     if add_l2_norm_diff:

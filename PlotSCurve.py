@@ -14,27 +14,40 @@ def parseScurveCsv(parameters, logger):
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
       @return lambda_vals - list of continuation values (float)
-      @return max_temp_vals - list of norms (float)
+      @return norm_vals - list of norms (float)
+      @return variable_name - string, name of variable selected
   '''
   logger.debug('Parsing csv file "{0}"'.format(parameters['result_curve_csv']))
   lambda_vals = []
-  max_temp_vals = []
+  norm_vals = []
+  part_of_name = 'norm_{0}_u{1}'.format(parameters['plot_norm'], parameters['plot_solution_index'])
   with open(parameters['result_curve_csv'], 'rb') as csvfile:
     csvreader = csv.reader(csvfile)
     line_i = 0 # line index
     for row in csvreader:
       if line_i == 0:
         # Headers
+        column_index = None
+        for col_i, elt in enumerate(row[2:]):
+          if part_of_name in elt:
+            column_index = col_i
+            # Extract variable name from column name (e.g. "norm_L_inf_u1 (temp)")
+            variable_name = elt[elt.index('(')+1:elt.index(')')]
+            break
+        if column_index is None:
+          error_msg = 'Could not find "{0}" in CSV file'.format(part_of_name)
+          logger.error(error_msg)
+          raise Exception, error_msg
         line_i += 1
         continue
       # Data line
       if len(row) < 3:
           break # finished reading all data
       lambda_vals.append(float(row[1]))
-      max_temp_vals.append(float(row[2]))
+      norm_vals.append(float(row[column_index]))
       line_i += 1
       continue # go to next data line
-  return lambda_vals, max_temp_vals
+  return lambda_vals, norm_vals, variable_name
 
 def plotSCurve(parameters, logger):
   ''' Plot S-Curve
@@ -42,7 +55,7 @@ def plotSCurve(parameters, logger):
       @param[in] logger - python logger instance
   '''
   # parse csv file with values to plot
-  lambda_vals, max_temp_vals = parseScurveCsv(parameters, logger)
+  lambda_vals, norm_vals, variable_name = parseScurveCsv(parameters, logger)
   # plot
   fig = plt.figure()
   ax_reload = plt.axes([0.02, 0.02, 0.1, 0.075])
@@ -68,20 +81,20 @@ def plotSCurve(parameters, logger):
         continue # go to next data line
 
   plt.xlabel('Continuation parameter', fontsize=20)
-  plt.ylabel('Norm of the solution', fontsize=20)
+  plt.ylabel('Norm {0} of "{1}"'.format(parameters['plot_norm'], variable_name), fontsize=20)
 
   #plt.plot(ref_x_values, ref_y_values,'r-x')
   plt.hold(True)
   x_values = np.array(lambda_vals)
-  y_values = np.array(max_temp_vals)
+  y_values = np.array(norm_vals)
   plt.plot(x_values, y_values,'-x', markerfacecolor='black', markeredgecolor='black',
            markersize=12)
 
   def reload(event):
     ''' Function to reload curves '''
-    lambda_vals, max_temp_vals = parseScurveCsv(parameters, logger)
+    lambda_vals, norm_vals, variable_name = parseScurveCsv(parameters, logger)
     x_values = np.array(lambda_vals)
-    y_values = np.array(max_temp_vals)
+    y_values = np.array(norm_vals)
     P.hold(True)
     [xmin, xmax, ymin, ymax] = plt.axis()
     plt.plot(x_values, y_values,'b-x', markerfacecolor='black', markeredgecolor='black',
@@ -98,7 +111,9 @@ def plotSCurve(parameters, logger):
 if __name__ == "__main__":
   parameters = {
     'result_curve_csv':'input_files/benchmark_9_THC/S_curve.csv',
-    'ref_s_curve':''
+    'ref_s_curve':'',
+    'plot_norm':'L_inf', # in ['L2', 'L_inf']
+    'plot_solution_index':1, # index of solution to plot
   }
   plotSCurve(parameters, getLogger('plotSCurve', level=logging.INFO))
   print 'Finished'

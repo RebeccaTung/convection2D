@@ -1,5 +1,4 @@
 ''' Script to run Redback continuation.
-  TODO: everything...
 '''
 
 import os, sys, random, logging, subprocess, shutil, math, csv, copy
@@ -24,12 +23,6 @@ def createRedbackFilesRequired(parameters, handler, logger):
       @return sim_i - dictionary representing simulation for iteration steps
       @return nb_vars - int, number of variables in simulation (not counting continuation parameters)
   '''
-  # Create output csv file for S-curve results
-  if os.path.isfile(parameters['result_curve_csv']):
-      os.remove(parameters['result_curve_csv'])
-  with open(parameters['result_curve_csv'], 'wb') as csvfile:
-    csvwriter = csv.writer(csvfile)
-    csvwriter.writerow(['step', 'lambda', 'norm'])
   # Check that our reader/writer can reproduce that input file faithfully
   filename_in = parameters['input_file']
   root, ext = os.path.splitext(filename_in)
@@ -59,6 +52,17 @@ def createRedbackFilesRequired(parameters, handler, logger):
   sim_1 = writeInitialGuessFile(1, data_sim, variable_names, parameters, handler, logger)
   sim_2 = writeInitialGuessFile(2, data_sim, variable_names, parameters, handler, logger)
   sim_i = writeIterationFile(data_sim, variable_names, parameters['input_iteration'], handler, logger, parameters)
+  # Create output csv file for S-curve results
+  if os.path.isfile(parameters['result_curve_csv']):
+      os.remove(parameters['result_curve_csv'])
+  with open(parameters['result_curve_csv'], 'wb') as csvfile:
+    csvwriter = csv.writer(csvfile)
+    row = ['step', 'lambda']
+    for i, variable_name in enumerate(variable_names):
+      row.append('norm_L_inf_u{0} ({1})'.format(i, variable_name))
+      row.append('norm_L2_u{0} ({1})'.format(i, variable_name))
+    csvwriter.writerow(row)
+  
   return sim_1, sim_2, sim_i, nb_vars
 
 def checkAndCleanInputParameters(parameters, logger):
@@ -68,6 +72,7 @@ def checkAndCleanInputParameters(parameters, logger):
       @return: found_error - boolean, True if any error was found
   '''
   continuation_variables = ['Gruntfest', 'Lewis'] # Acceptable continuation variables
+  plot_norms = ['L_inf', 'L2'] # Acceptable norms to plot
   found_error = False
   # Check all parameters are provided
   if type(parameters) != dict:
@@ -76,11 +81,15 @@ def checkAndCleanInputParameters(parameters, logger):
   # add defaults
   if 'continuation_variable' not in parameters:
     parameters['continuation_variable'] = 'Gruntfest'
+  if 'plot_norm' not in parameters:
+    parameters['plot_norm'] = 'L_inf'
+  if 'plot_solution_index' not in parameters:
+    parameters['plot_solution_index'] = 0
   # check entries
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor']
-  params_int = ['nb_threads']
+  params_int = ['nb_threads', 'plot_solution_index']
   params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
-                'error_filename', 'continuation_variable']
+                'error_filename', 'continuation_variable', 'plot_norm']
   params_bool = ['plot_s_curve']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
@@ -117,6 +126,14 @@ def checkAndCleanInputParameters(parameters, logger):
   if not parameters['continuation_variable'] in continuation_variables:
     logger.error('The continuation variable must be in {0}'.format(continuation_variables))
     found_error = True
+  # Check plot options
+  if not parameters['plot_norm'] in plot_norms:
+    logger.error('The "plot_norm" parameter must be in {0}'.format(plot_norms))
+    found_error = True
+  if not parameters['plot_solution_index'] > -1:
+    logger.error('The "plot_solution_index" parameter must be positive')
+    found_error = True
+  
   # Ensure that first two continuation parameter are sorted
   if not os.path.isdir(parameters['running_dir']):
     os.mkdir(parameters['running_dir'])
@@ -228,21 +245,23 @@ def runInitialSimulation2(parameters, sim_data, logger):
 
 def parseCsvFile(csv_filename, nb_vars, logger):
   ''' Parse csv file to extract latest values from file, including
-      lambda, solution_norm, L2_norm_u_diff, nli, nnli
+      lambda, L_inf_norm_u, L2_norm_u_diff, nli, nnli
       @param[in] csv_filename - string, name of csv file to parse
       @param[in] nb_vars - int, number of variables active in the simulation
       @param[in] logger - python logger instance
       @return data - dictionary of data with following keys:
-        ['lambda','solution_norm','L2_norm_u_diff','nli','nnli']
+        ['lambda','L_inf_norm_u','L2_norm_u','L2_norm_u_diff','nli','nnli']
   '''
   logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
-  latest_sol_norm = [None]*nb_vars
+  latest_L_inf_norm = [None]*nb_vars
+  latest_L2_norm = [None]*nb_vars
   latest_L2norm_diff = [None]*nb_vars
   latest_nli = None
   latest_nnli = None
   index_column_lambda = None
-  index_column_sol_norm = [None]*nb_vars
+  index_column_L_inf_norm = [None]*nb_vars
+  index_column_L2_norm = [None]*nb_vars
   index_L2norm_diff = [None]*nb_vars
   index_nli = None
   index_nnli = None
@@ -256,10 +275,14 @@ def parseCsvFile(csv_filename, nb_vars, logger):
         if 'lambda' in headers:
           index_column_lambda = headers.index('lambda')
         for k in range(nb_vars):
-          # solutions norms
-          label = 'solution{0}_norm'.format(k)
+          # solutions L_inf norms
+          label = 'L_inf_norm_u{0}'.format(k)
           if label in headers:
-            index_column_sol_norm[k] = headers.index(label)
+            index_column_L_inf_norm[k] = headers.index(label)
+          # solutions L2 norms
+          label = 'L2_norm_u{0}'.format(k)
+          if label in headers:
+            index_column_L2_norm[k] = headers.index(label)
           # solutions diff norms
           label = 'L2_norm_u{0}_diff'.format(k)
           if label in headers:
@@ -276,9 +299,12 @@ def parseCsvFile(csv_filename, nb_vars, logger):
       if index_column_lambda is not None:
         latest_lambda = float(row[index_column_lambda])
       for k in range(nb_vars):
-        # solutions norms
-        if index_column_sol_norm[k] is not None:
-          latest_sol_norm[k] = float(row[index_column_sol_norm[k]])
+        # solutions L_inf norms
+        if index_column_L_inf_norm[k] is not None:
+          latest_L_inf_norm[k] = float(row[index_column_L_inf_norm[k]])
+        # solutions L2 norms
+        if index_column_L2_norm[k] is not None:
+          latest_L2_norm[k] = float(row[index_column_L2_norm[k]])
         # solutions diff norms
         label = 'L2_norm_u{0}_diff'.format(k)
         if index_L2norm_diff[k] is not None:
@@ -291,51 +317,28 @@ def parseCsvFile(csv_filename, nb_vars, logger):
       continue # go to next data line
   data = {
     'lambda':latest_lambda,
-    'solution_norm':latest_sol_norm,
+    'L_inf_norm_u':latest_L_inf_norm,
+    'L2_norm_u':latest_L2_norm,
     'L2_norm_u_diff':latest_L2norm_diff,
     'nli':latest_nli,
     'nnli':latest_nnli
   }
   return data
 
-def writeResultsToCsvFile(results, step_index, parameters):
+def writeResultsToCsvFile(results, step_index, parameters, variable_names):
   ''' Write results to S-curve csv file for give step
       @param[in] results - dictionary of results returned by parseCsvFile()
       @param[in] step_index - int, step index
       @param[in] parameters - dictionary of input parameters
+      @param[in] variable_names - list of strings, simulation variable names
   '''
   with open(parameters['result_curve_csv'], 'a') as csvfile:
     csvwriter = csv.writer(csvfile)
-    csvwriter.writerow([step_index, '{0:3.16e}'.format(results[step_index]['lambda']),
-                        '{0:3.16e}'.format(results[step_index]['solution_norm'][0])])
-    # TODO: which solution norm do we use?
-
-def parseScurveCsv(parameters, logger):
-  ''' Parse S-curve csv file
-      @param[in] parameters - dictionary of input parameters
-      @param[in] logger - python logger instance
-      @return lambda_vals - list of continuation values (float)
-      @return max_temp_vals - list of norms (float)
-  '''
-  logger.debug('Parsing csv file "{0}"'.format(parameters['result_curve_csv']))
-  lambda_vals = []
-  max_temp_vals = []
-  with open(parameters['result_curve_csv'], 'rb') as csvfile:
-    csvreader = csv.reader(csvfile)
-    line_i = 0 # line index
-    for row in csvreader:
-      if line_i == 0:
-        # Headers
-        line_i += 1
-        continue
-      # Data line
-      if len(row) < 3:
-          break # finished reading all data
-      lambda_vals.append(float(row[1]))
-      max_temp_vals.append(float(row[2]))
-      line_i += 1
-      continue # go to next data line
-  return lambda_vals, max_temp_vals
+    row = [step_index, '{0:3.16e}'.format(results[step_index]['lambda'])]
+    for i, variable_name in enumerate(variable_names):
+      row.append('{0:3.16e}'.format(results[step_index]['L_inf_norm_u'][i]))
+      row.append('{0:3.16e}'.format(results[step_index]['L2_norm_u'][i]))
+    csvwriter.writerow(row)
 
 def getInitialStepLength(ds_old, ds0, previous_nb_attempts, logger):
   ''' Calculates length of initial continuation step new_ds for coming iteration, not exceeding ds0.
@@ -392,6 +395,7 @@ def runContinuation(parameters, logger):
     return
   handler = MooseInputFileRW()
   sim_1, sim_2, sim_i, nb_vars = createRedbackFilesRequired(parameters, handler, logger)
+  variable_names = getListOfActiveVariableNames(sim_1, logger)
   initial_cwd = os.getcwd()
   os.chdir(parameters['running_dir'])
   # Pseudo arc-length continuation algorithm
@@ -407,7 +411,7 @@ def runContinuation(parameters, logger):
   lambda_old = parameters['lambda_initial_1']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger)
   results[step_index]['lambda'] = parameters['lambda_initial_1']*parameters['rescaling_factor']
-  writeResultsToCsvFile(results, step_index, parameters)
+  writeResultsToCsvFile(results, step_index, parameters, variable_names)
 
   step_index += 1
   logger.info('Step {0} (second initial)'.format(step_index))
@@ -416,7 +420,7 @@ def runContinuation(parameters, logger):
   lambda_old = parameters['lambda_initial_2']
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars, logger)
   results[step_index]['lambda'] = parameters['lambda_initial_2']*parameters['rescaling_factor']
-  writeResultsToCsvFile(results, step_index, parameters)
+  writeResultsToCsvFile(results, step_index, parameters, variable_names)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
   ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
   
@@ -485,7 +489,7 @@ def runContinuation(parameters, logger):
     results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME), nb_vars, logger)
     lambda_old = results[step_index]['lambda']
     results[step_index]['lambda'] *= parameters['rescaling_factor']
-    writeResultsToCsvFile(results, step_index, parameters)
+    writeResultsToCsvFile(results, step_index, parameters, variable_names)
 
     # increment s
     s += ds
@@ -520,7 +524,9 @@ if __name__ == "__main__":
     'result_curve_csv':'S_curve.csv',
     'error_filename':'error_output.txt',
     'plot_s_curve':False,
-    'ref_s_curve':'benchmark_1_T/ref.csv'
+    'ref_s_curve':'benchmark_1_T/ref.csv',
+    'plot_norm':'L_inf', # in ['L2', 'L_inf']
+    'plot_solution_index':0, # index of solution to plot
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)

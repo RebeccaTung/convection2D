@@ -138,7 +138,7 @@ class TestStringMethods(unittest.TestCase):
     headers1 = data1.keys()
     headers2 = data2.keys()
     nb_col = len(headers2)
-    assert len(headers1) == nb_col, 'Different number of columns in files "{0}" and "{0}"'.\
+    assert len(headers1) == nb_col, 'Different number of columns in files "{0}" and "{1}"'.\
       format(filename1, filename2)
     # Check data
     if not len(data1):
