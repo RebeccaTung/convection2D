@@ -20,3 +20,4 @@ bench_TH_out.e
 error.txt
 bench_THC_no_poro_out.csv
 doc/hidden
+convection2D.csv

@@ -1,6 +1,6 @@
 ''' Unittests for RedbackContinuation functions '''
 
-import os, sys, logging, unittest, multiprocessing, csv, math
+import os, sys, logging, unittest, multiprocessing, csv, math, difflib
 
 from CheckMooseOutput import checkMooseOutput, MooseException
 from MooseInputFileRW import MooseInputFileRW
@@ -168,7 +168,7 @@ class TestStringMethods(unittest.TestCase):
     '''
     self.assertTrue(isinstance(first, str), 'First argument is not a string')
     self.assertTrue(isinstance(second, str), 'Second argument is not a string')
-    if first != second:
+    if first.strip() != second.strip():
       message = ''.join(difflib.ndiff(first.splitlines(True),
                                       second.splitlines(True)))
       if msg:

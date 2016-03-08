@@ -36,7 +36,7 @@ def createRedbackFilesRequired(parameters, handler, logger):
     file_content_1 = f_1.read()
   with open(filename_out, 'r') as f_2:
     file_content_2 = f_2.read()
-  if file_content_1 != file_content_2:
+  if file_content_1.strip() != file_content_2.strip():
     error_msg = 'Reader/writer did not reproduce exactly the input file "{0}". '.format(filename_in)
     error_msg += 'Check manually if this is acceptable and overwrite this error message if necessary.'
     raise Exception, error_msg
@@ -87,6 +87,10 @@ def checkAndCleanInputParameters(parameters, logger):
     parameters['plot_solution_index'] = 0
   if 'step_change_factor' not in parameters:
     parameters['step_change_factor'] = 0.25
+  if 'ref_s_curve' not in parameters:
+    parameters['ref_s_curve'] = ''
+  if 'plot_s_curve' not in parameters:
+    parameters['plot_s_curve'] = False
   # check entries
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor',
                  'step_change_factor']
