@@ -499,7 +499,7 @@ def runContinuation(parameters, logger):
     writeResultsToCsvFile(results, step_index, parameters, variable_names)
 
     # increment s
-    s += ds
+    s += math.fabs(ds)
     # check if finished
     if (s > parameters['s_max']):
       finished = True
