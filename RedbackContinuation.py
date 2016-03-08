@@ -85,8 +85,11 @@ def checkAndCleanInputParameters(parameters, logger):
     parameters['plot_norm'] = 'L_inf'
   if 'plot_solution_index' not in parameters:
     parameters['plot_solution_index'] = 0
+  if 'step_change_factor' not in parameters:
+    parameters['step_change_factor'] = 0.25
   # check entries
-  params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor']
+  params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor',
+                 'step_change_factor']
   params_int = ['nb_threads', 'plot_solution_index']
   params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
                 'error_filename', 'continuation_variable', 'plot_norm']
@@ -479,7 +482,7 @@ def runContinuation(parameters, logger):
         logger.debug('Attempt failed Iteration step={0} with ds={1}'\
                     .format(step_index, ds))
         attempt_index += 1
-        ds = ds/4.
+        ds = ds*parameters['step_change_factor']
     if attempt_index >= MAX_ATTEMPTS:
       logger.error('Execution failed after {0} attempts!'\
                    .format(attempt_index))
@@ -527,6 +530,8 @@ if __name__ == "__main__":
     'ref_s_curve':'benchmark_1_T/ref.csv',
     'plot_norm':'L_inf', # in ['L2', 'L_inf']
     'plot_solution_index':0, # index of solution to plot
+    # step refinement
+    'step_change_factor':0.25, # multiplying factor of step size when step fails
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
