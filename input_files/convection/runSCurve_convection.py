@@ -13,12 +13,12 @@ if __name__ == "__main__":
   outpud_dir = '.'
   parameters = {
     'continuation_variable':'Lewis', # in ['Gruntfest', 'Lewis']
-    'lambda_initial_1':1e-7,
-    'lambda_initial_2':9e-8,
-    'ds_initial':-1e-9,
-    's_max':1e-7,
+    'lambda_initial_1':4,
+    'lambda_initial_2':4.1,
+    'ds_initial':1e-1,
+    's_max':4,
     # Rescaling factor
-    'rescaling_factor':1, # to multiply continuation parameter
+    'rescaling_factor':1e-8, # to multiply continuation parameter
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,

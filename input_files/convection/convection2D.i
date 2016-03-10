@@ -53,7 +53,7 @@
 [Functions]
   [./init_gradient_T]
     type = ParsedFunction
-    value = 0.0-y*(1.0-0.0)*1000/500
+    value = '0.0-y*(1.0-0.0)*1000/500 + 0.2*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
   [../]
   [./init_gradient_P]
     type = ParsedFunction
@@ -72,7 +72,7 @@
     variable = temp
     type = FunctionWithRandomIC
     function = init_gradient_T
-    max = 0.1
+    max = 0
   [../]
   [./press_IC]
     variable = pore_pressure

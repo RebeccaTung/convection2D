@@ -13,7 +13,7 @@ if __name__ == "__main__":
   parameters = {
     'result_curve_csv':'S_curve.csv',
     'ref_s_curve':'',
-    'plot_norm':'L_inf', # in ['L2', 'L_inf']
+    'plot_norm':'L2', # in ['L2', 'L_inf']
     'plot_solution_index':1, # index of solution to plot
   }
   plotSCurve(parameters, getLogger('plotSCurve', level=logging.INFO))

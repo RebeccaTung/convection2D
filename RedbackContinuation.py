@@ -434,7 +434,7 @@ def runContinuation(parameters, logger):
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
   while not finished:
-    #raw_input('About to start the first iterative step.\nPress enter to continue...')
+    #raw_input('About to start iterative step.\nPress enter to continue...')
     #ds_old = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
     step_index += 1
     ds_old = ds
