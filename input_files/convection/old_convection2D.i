@@ -42,7 +42,7 @@
     Peclet_number = 1.0
     phi0 = 0.3
     pressurization_coefficient = 0.166923076923
-    ref_lewis_nb = 4.69267773818e-08
+    ref_lewis_nb = 4.34784838361e-08
     solid_compressibility = 0.001
     solid_density = 2.5
     solid_thermal_expansion = 1e-05
@@ -53,11 +53,11 @@
 [Functions]
   [./init_gradient_T]
     type = ParsedFunction
-    value = '0.0-y*(1.0-0.0)*1000/500 + 0.2*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
+    value = '(0.0-y*(1.0-0.0)*1000/500) + 0.2*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
   [../]
   [./init_gradient_P]
     type = ParsedFunction
-    value = 0.02-1.96*y
+    value = (0.02-1.96*y)
   [../]
   [./timestep_function]
     type = ParsedFunction
@@ -114,14 +114,10 @@
     order = CONSTANT
     family = MONOMIAL
   [../]
-  [./grad_temp]
-    order = CONSTANT
-    family = MONOMIAL
-  [../]
 []
 
 [Kernels]
-  active = 'pres_conv press_td temp_diff temp_td temp_conv press_diff'
+  active = 'temp_td press_td pres_conv temp_diff temp_conv press_diff'
   [./temp_td]
     type = TimeDerivative
     variable = temp
@@ -171,15 +167,6 @@
     component = 1
     variable = fluid_vel_y
     property = fluid_velocity
-  [../]
-  [./grad_temp]
-    type = VariableGradientComponent
-    variable = grad_temp
-    component = y
-    block = 0
-    execute_on = timestep_end
-    boundary = bottom
-    gradient_variable = temp
   [../]
 []
 
@@ -231,11 +218,6 @@
     variable = fluid_vel_y
     execute_on = nonlinear
     value_type = min
-  [../]
-  [./Nusselt_number]
-    type = SideIntegralVariablePostprocessor
-    variable = grad_temp
-    boundary = bottom
   [../]
 []
 
