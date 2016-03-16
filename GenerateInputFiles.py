@@ -541,13 +541,15 @@ def __disableTimeDerivativeKernels(sim_data):
       @param[in,out] sim_data - python structure with simulation data. Gets modified
       @return sim_data - updated python structure
   '''
+  transient_kernel_types = [# list of kernels to disable
+    'TimeDerivative', 'RedbackThermalPressurization']#, 'RedbackPoromechanics']
   kernels_index = [elt['name'] for elt in sim_data['children']].index('Kernels')
   kernels_to_keep = []
   kernels = sim_data['children'][kernels_index]
   for kernel in kernels['children']:
     kernel_name = kernel['name']
     kernel_type = [elt['value'] for elt in kernel['attributes'] if elt['name']=='type'][0]
-    if kernel_type != 'TimeDerivative':
+    if kernel_type not in transient_kernel_types:
       kernels_to_keep.append(kernel_name) 
       # Note: keeping regardless of active or not. This is changed later
   attribute_names = [attr['name'] for attr in kernels['attributes']]
