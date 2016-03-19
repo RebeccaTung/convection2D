@@ -55,16 +55,39 @@ def createRedbackFilesRequired(parameters, handler, logger):
   sim_i = writeIterationFile(data_sim, variable_names, parameters['input_iteration'], handler, logger, parameters)
   # Create output csv file for S-curve results
   if os.path.isfile(parameters['result_curve_csv']):
-      os.remove(parameters['result_curve_csv'])
+    os.remove(parameters['result_curve_csv'])
   with open(parameters['result_curve_csv'], 'wb') as csvfile:
     csvwriter = csv.writer(csvfile)
     row = ['step', 'lambda']
+    # add norms of variables
     for i, variable_name in enumerate(variable_names):
       row.append('norm_L_inf_u{0} ({1})'.format(i, variable_name))
       row.append('norm_L2_u{0} ({1})'.format(i, variable_name))
+    # add post-processors
+    for pp_name in parameters['postprocessors_exported']:
+      row.append(pp_name)
     csvwriter.writerow(row)
   
   return sim_1, sim_2, sim_i, nb_vars
+
+def checkMoreInputParameters(sim_data, parameters, logger):
+  ''' Check input parameters provided by user, given simulation dictionary
+      @param[in] sim_data - dict, simulation dictionary as returned 
+        by createRedbackFilesRequired()
+      @param[in] parameters - dictionary of input parameters
+      @param[in] logger - python logger instance
+      @return: found_error - boolean, True if any error was found
+  '''
+  found_error = False
+  # read postprocessors exported
+  top_block_names = [elt['name'] for elt in sim_data['children']]
+  pps_index = top_block_names.index('Postprocessors')
+  pps = sim_data['children'][pps_index]
+  pp_names = [elt['name'] for elt in pps['children']]
+  if parameters['plot_post_processor'] and not parameters['plot_post_processor'] in pp_names:
+    logger.error('The "plot_post_processor" parameter must be in {0}'.format(pp_names))
+    found_error = True
+  return found_error
 
 def checkAndCleanInputParameters(parameters, logger):
   ''' Check input parameters provided by user and add default values where needed.
@@ -94,13 +117,18 @@ def checkAndCleanInputParameters(parameters, logger):
     parameters['plot_s_curve'] = False
   if 'non_blocking' not in parameters:
     parameters['non_blocking'] = True
+  if 'postprocessors_exported' not in parameters:
+    parameters['postprocessors_exported'] = []
+  if 'plot_post_processor' not in parameters:
+    parameters['plot_post_processor'] = ''
   # check entries
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor',
                  'step_change_factor']
   params_int = ['nb_threads', 'plot_solution_index']
   params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
-                'error_filename', 'continuation_variable', 'plot_norm']
+                'error_filename', 'continuation_variable', 'plot_norm', 'plot_post_processor']
   params_bool = ['plot_s_curve', 'non_blocking']
+  params_list_strings = ['postprocessors_exported']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
   for param in all_keys:
@@ -128,6 +156,15 @@ def checkAndCleanInputParameters(parameters, logger):
     if not type(parameters[param]) == str:
       logger.error('Input parameter "{0}={1}" should be a string!'.format(param, parameters[param]))
       found_error = True
+  for param in params_list_strings:
+    if not type(parameters[param]) == list:
+      logger.error('Input parameter "{0}={1}" should be a list of strings!'.format(param, parameters[param]))
+      found_error = True
+    else:
+      for elt in parameters[param]:
+        if not type(elt) == str:
+          logger.error('Input parameter "{0}={1}" should be a list of strings!'.format(param, parameters[param]))
+          found_error = True
   for param in params_bool:
     if not type(parameters[param]) == bool:
       logger.error('Input parameter "{0}={1}" should be a boolean!'.format(param, parameters[param]))
@@ -253,14 +290,16 @@ def runInitialSimulation2(parameters, sim_data, logger):
     logger.error('Execution failed! (Second initialisation step)')
     sys.exit(1)
 
-def parseCsvFile(csv_filename, nb_vars, logger):
+def parseCsvFile(csv_filename, nb_vars, logger, postprocessors=[]):
   ''' Parse csv file to extract latest values from file, including
       lambda, L_inf_norm_u, L2_norm_u_diff, nli, nnli
       @param[in] csv_filename - string, name of csv file to parse
       @param[in] nb_vars - int, number of variables active in the simulation
       @param[in] logger - python logger instance
+      @param[in] postprocessors - list of strings, post-processor names
       @return data - dictionary of data with following keys:
-        ['lambda','L_inf_norm_u','L2_norm_u','L2_norm_u_diff','nli','nnli']
+        ['lambda','L_inf_norm_u','L2_norm_u','L2_norm_u_diff','nli','nnli',
+         'post_processors']
   '''
   logger.debug('Parsing csv file "{0}"'.format(csv_filename))
   latest_lambda = None
@@ -269,12 +308,14 @@ def parseCsvFile(csv_filename, nb_vars, logger):
   latest_L2norm_diff = [None]*nb_vars
   latest_nli = None
   latest_nnli = None
+  latest_pps = [None]*len(postprocessors)
   index_column_lambda = None
   index_column_L_inf_norm = [None]*nb_vars
   index_column_L2_norm = [None]*nb_vars
   index_L2norm_diff = [None]*nb_vars
   index_nli = None
   index_nnli = None
+  indices_pps = [None]*len(postprocessors)
   with open(csv_filename, 'rb') as csvfile:
     csvreader = csv.reader(csvfile)
     line_i = 0 # line index
@@ -301,6 +342,10 @@ def parseCsvFile(csv_filename, nb_vars, logger):
           index_nli = headers.index('nli')
         if 'nnli' in headers:
           index_nnli = headers.index('nnli')
+        # postprocessors
+        for i_pp, pp_name in enumerate(postprocessors):
+          if pp_name in headers:
+            indices_pps[i_pp] = headers.index(pp_name)
         line_i += 1
         continue
       # Data line
@@ -323,6 +368,10 @@ def parseCsvFile(csv_filename, nb_vars, logger):
         latest_nli = float(row[index_nli])
       if index_nnli is not None:
         latest_nnli = float(row[index_nnli])
+      # post-processors
+      for i_pp, pp_name in enumerate(postprocessors):
+        if indices_pps[i_pp] is not None:
+          latest_pps[i_pp] = float(row[indices_pps[i_pp]])
       line_i += 1
       continue # go to next data line
   data = {
@@ -331,7 +380,8 @@ def parseCsvFile(csv_filename, nb_vars, logger):
     'L2_norm_u':latest_L2_norm,
     'L2_norm_u_diff':latest_L2norm_diff,
     'nli':latest_nli,
-    'nnli':latest_nnli
+    'nnli':latest_nnli,
+    'post_processors':latest_pps,
   }
   return data
 
@@ -345,9 +395,13 @@ def writeResultsToCsvFile(results, step_index, parameters, variable_names):
   with open(parameters['result_curve_csv'], 'a') as csvfile:
     csvwriter = csv.writer(csvfile)
     row = [step_index, '{0:3.16e}'.format(results[step_index]['lambda'])]
+    # add norms of variables
     for i, variable_name in enumerate(variable_names):
       row.append('{0:3.16e}'.format(results[step_index]['L_inf_norm_u'][i]))
       row.append('{0:3.16e}'.format(results[step_index]['L2_norm_u'][i]))
+    # add post-processors
+    for i_pp, pp_name in enumerate(parameters['postprocessors_exported']):
+      row.append('{0:3.16e}'.format(results[step_index]['post_processors'][i_pp]))
     csvwriter.writerow(row)
 
 def getInitialStepLength(ds_old, ds0, previous_nb_attempts, logger):
@@ -406,6 +460,9 @@ def runContinuation(parameters, logger):
   handler = MooseInputFileRW()
   sim_1, sim_2, sim_i, nb_vars = createRedbackFilesRequired(parameters, handler, logger)
   variable_names = getListOfActiveVariableNames(sim_1, logger)
+  found_error = checkMoreInputParameters(sim_1, parameters, logger)
+  if found_error:
+    return
   initial_cwd = os.getcwd()
   os.chdir(parameters['running_dir'])
   # Pseudo arc-length continuation algorithm
@@ -419,7 +476,8 @@ def runContinuation(parameters, logger):
   logger.info('Step {0} (first initial)'.format(step_index))
   runInitialSimulation1(parameters, sim_1, logger)
   lambda_old = parameters['lambda_initial_1']
-  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger)
+  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger,
+                                     parameters['postprocessors_exported'])
   results[step_index]['lambda'] = parameters['lambda_initial_1']*parameters['rescaling_factor']
   writeResultsToCsvFile(results, step_index, parameters, variable_names)
   if parameters['plot_s_curve']:
@@ -430,7 +488,8 @@ def runContinuation(parameters, logger):
   runInitialSimulation2(parameters, sim_2, logger)
   lambda_older = parameters['lambda_initial_1']
   lambda_old = parameters['lambda_initial_2']
-  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars, logger)
+  results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG2_NAME), nb_vars, logger,
+                                     parameters['postprocessors_exported'])
   results[step_index]['lambda'] = parameters['lambda_initial_2']*parameters['rescaling_factor']
   writeResultsToCsvFile(results, step_index, parameters, variable_names)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
@@ -500,7 +559,8 @@ def runContinuation(parameters, logger):
       sys.exit(1)
     # update lambda_ic
     lambda_older = lambda_old
-    results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME), nb_vars, logger)
+    results[step_index] = parseCsvFile('{0}.csv'.format(SIM_ITER_NAME), nb_vars, logger,
+                                       parameters['postprocessors_exported'])
     lambda_old = results[step_index]['lambda']
     results[step_index]['lambda'] *= parameters['rescaling_factor']
     writeResultsToCsvFile(results, step_index, parameters, variable_names)
@@ -537,13 +597,15 @@ if __name__ == "__main__":
     'running_dir':'input_files/benchmark_1_T/running_tmp',
     'result_curve_csv':'input_files/benchmark_1_T/S_curve.csv',
     'error_filename':'error_output.txt',
+    'postprocessors_exported':[],
     # step refinement
     'step_change_factor':0.25, # multiplying factor of step size when step fails
     # plot
     'plot_s_curve':True,
     'non_blocking':True,
     'ref_s_curve':'input_files/benchmark_1_T/ref.csv',
-    'plot_norm':'L_inf', # in ['L2', 'L_inf']
+    'plot_post_processor':'', # post-processor to plot. If empty, then norm is used.
+    'plot_norm':'L_inf', # in ['L2', 'L_inf'], only if no post-processor to plot is provided
     'plot_solution_index':0, # index of solution to plot
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)

@@ -13,7 +13,8 @@ if __name__ == "__main__":
   parameters = {
     'result_curve_csv':'S_curve.csv',
     'ref_s_curve':'',
-    'plot_norm':'L2', # in ['L2', 'L_inf']
+    'plot_post_processor':'Nusselt_number', # post-processor to plot. If empty, then norm is used.
+    'plot_norm':'L2', # in ['L2', 'L_inf'], only if no post-processor to plot is provided
     'plot_solution_index':1, # index of solution to plot
   }
   plotSCurve(parameters, getLogger('plotSCurve', level=logging.INFO))

@@ -28,9 +28,11 @@ if __name__ == "__main__":
     'error_filename':'error_output.txt',
     'plot_s_curve':True,
     'non_blocking':True,
+    'plot_post_processor':'Nusselt_number', # post-processor to plot. If empty, then norm is used.
     'plot_norm':'L2', # in ['L2', 'L_inf']
     'plot_solution_index':1, # index of solution to plot
     'ref_s_curve':'',
+    'postprocessors_exported':['Nusselt_number'],
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 
 from Utils import getLogger
+from matplotlib.pyplot import ylabel
 
 def parseScurveCsv(parameters, logger):
   ''' Parse S-curve csv file
@@ -20,7 +21,11 @@ def parseScurveCsv(parameters, logger):
   logger.debug('Parsing csv file "{0}"'.format(parameters['result_curve_csv']))
   lambda_vals = []
   norm_vals = []
-  part_of_name = 'norm_{0}_u{1}'.format(parameters['plot_norm'], parameters['plot_solution_index'])
+  use_pp = False # we can either use post-processor or variable norm
+  if 'plot_post_processor' in parameters and parameters['plot_post_processor']:
+    use_pp = True
+  else:
+    part_of_name = 'norm_{0}_u{1}'.format(parameters['plot_norm'], parameters['plot_solution_index'])
   with open(parameters['result_curve_csv'], 'rb') as csvfile:
     csvreader = csv.reader(csvfile)
     line_i = 0 # line index
@@ -29,11 +34,17 @@ def parseScurveCsv(parameters, logger):
         # Headers
         column_index = None
         for col_i, elt in enumerate(row[2:]):
-          if part_of_name in elt:
-            column_index = col_i
-            # Extract variable name from column name (e.g. "norm_L_inf_u1 (temp)")
-            variable_name = elt[elt.index('(')+1:elt.index(')')]
-            break
+          if use_pp:
+            if elt == parameters['plot_post_processor']:
+              column_index = col_i
+              variable_name = parameters['plot_post_processor']
+              break
+          else:
+            if part_of_name in elt:
+              column_index = col_i
+              # Extract variable name from column name (e.g. "norm_L_inf_u1 (temp)")
+              variable_name = elt[elt.index('(')+1:elt.index(')')]
+              break
         if column_index is None:
           error_msg = 'Could not find "{0}" in CSV file'.format(part_of_name)
           logger.error(error_msg)
@@ -63,7 +74,7 @@ def plotSCurve(parameters, logger, figure_name=None):
   ax_reload = plt.axes([0.02, 0.02, 0.1, 0.075])
   reload_button = Button(ax_reload, 'Reload')
   ax = fig.add_subplot(1,1,1)
-  plt.subplots_adjust(left=0.1, bottom=0.15, right=0.97, top=0.95,
+  plt.subplots_adjust(left=0.15, bottom=0.15, right=0.97, top=0.95,
                       wspace=None, hspace=None)
 
   # Plot reference S-curve
@@ -83,7 +94,11 @@ def plotSCurve(parameters, logger, figure_name=None):
         continue # go to next data line
 
   plt.xlabel('Continuation parameter', fontsize=20)
-  plt.ylabel('Norm {0} of "{1}"'.format(parameters['plot_norm'], variable_name), fontsize=20)
+  if 'plot_post_processor' in parameters and parameters['plot_post_processor']:
+    ylabel = parameters['plot_post_processor']
+  else:
+    ylabel = 'Norm {0} of "{1}"'.format(parameters['plot_norm'], variable_name)
+  plt.ylabel(ylabel, fontsize=20)
 
   #plt.plot(ref_x_values, ref_y_values,'r-x')
   plt.hold(True)
