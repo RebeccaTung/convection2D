@@ -49,15 +49,17 @@ def parseScurveCsv(parameters, logger):
       continue # go to next data line
   return lambda_vals, norm_vals, variable_name
 
-def plotSCurve(parameters, logger):
+def plotSCurve(parameters, logger, figure_name=None):
   ''' Plot S-Curve
       @param[in] parameters - dictionary of input parameters
       @param[in] logger - python logger instance
+      @param[in] figure_name - string or None (to get new figure)
+      @return[out] figure_number - index or name of figure
   '''
   # parse csv file with values to plot
   lambda_vals, norm_vals, variable_name = parseScurveCsv(parameters, logger)
   # plot
-  fig = plt.figure()
+  fig = plt.figure(num=figure_name)
   ax_reload = plt.axes([0.02, 0.02, 0.1, 0.075])
   reload_button = Button(ax_reload, 'Reload')
   ax = fig.add_subplot(1,1,1)
@@ -87,7 +89,7 @@ def plotSCurve(parameters, logger):
   plt.hold(True)
   x_values = np.array(lambda_vals)
   y_values = np.array(norm_vals)
-  plt.plot(x_values, y_values,'-x', markerfacecolor='black', markeredgecolor='black',
+  plt.plot(x_values, y_values,'-x', color='black', markerfacecolor='black', markeredgecolor='black',
            markersize=12)
 
   def reload(event):
@@ -102,16 +104,26 @@ def plotSCurve(parameters, logger):
     P.axis([xmin, xmax, ymin, ymax])
     P.hold(False)
     plt.draw()
+    plt.pause(0.001)
     print 'Reloaded {0} with {1} data points'.format(parameters['result_curve_csv'], len(x_values))
 
   reload_button.on_clicked(reload)
   #plt.axes().set_aspect('equal', 'datalim')
+  if 'non_blocking' in parameters and parameters['non_blocking']:
+    plt.ion()
+  else:
+    plt.ioff()
+  # See http://stackoverflow.com/questions/28269157/plotting-in-a-non-blocking-way-with-matplotlib
   plt.show()
+  plt.draw()
+  plt.pause(0.001)
+  return fig.number
 
 if __name__ == "__main__":
   parameters = {
     'result_curve_csv':'input_files/benchmark_9_THC/S_curve.csv',
     'ref_s_curve':'',
+    'non_blocking':False,
     'plot_norm':'L_inf', # in ['L2', 'L_inf']
     'plot_solution_index':1, # index of solution to plot
   }

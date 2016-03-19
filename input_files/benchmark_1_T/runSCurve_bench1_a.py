@@ -26,9 +26,11 @@ if __name__ == "__main__":
     'running_dir':'running_tmp',
     'result_curve_csv':'S_curve.csv',
     'error_filename':'error_output.txt',
-    'plot_s_curve':False,
+    'plot_s_curve':True,
+    'non_blocking':True,
     'ref_s_curve':'ref.csv'
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
+  raw_input('press enter to finish')
   print 'Finished'

@@ -3,6 +3,7 @@
 
 import os, sys, random, logging, subprocess, shutil, math, csv, copy
 from os.path import expanduser
+import matplotlib.pyplot as plt
 
 from Utils import getLogger, getListFromString, getListOfActiveVariableNames
 from CheckMooseOutput import checkMooseOutput, MooseException
@@ -91,13 +92,15 @@ def checkAndCleanInputParameters(parameters, logger):
     parameters['ref_s_curve'] = ''
   if 'plot_s_curve' not in parameters:
     parameters['plot_s_curve'] = False
+  if 'non_blocking' not in parameters:
+    parameters['non_blocking'] = True
   # check entries
   params_real = ['lambda_initial_1', 'lambda_initial_2', 'ds_initial', 's_max', 'rescaling_factor',
                  'step_change_factor']
   params_int = ['nb_threads', 'plot_solution_index']
   params_str = ['exec_loc', 'input_file', 'running_dir', 'result_curve_csv', 'ref_s_curve', 
                 'error_filename', 'continuation_variable', 'plot_norm']
-  params_bool = ['plot_s_curve']
+  params_bool = ['plot_s_curve', 'non_blocking']
   all_keys = params_real + params_int + params_str + params_bool
   missing_param = False
   for param in all_keys:
@@ -419,6 +422,8 @@ def runContinuation(parameters, logger):
   results[step_index] = parseCsvFile('{0}.csv'.format(SIM_IG1_NAME), nb_vars, logger)
   results[step_index]['lambda'] = parameters['lambda_initial_1']*parameters['rescaling_factor']
   writeResultsToCsvFile(results, step_index, parameters, variable_names)
+  if parameters['plot_s_curve']:
+    fig_name = plotSCurve(parameters, logger, figure_name=None)
 
   step_index += 1
   logger.info('Step {0} (second initial)'.format(step_index))
@@ -430,7 +435,9 @@ def runContinuation(parameters, logger):
   writeResultsToCsvFile(results, step_index, parameters, variable_names)
   attempt_index = 1 # This second initialisation step succeeded in 1 attempt
   ds = computeDsForPreviousStep(results, step_index, lambda_old, lambda_older, nb_vars, logger)
-  
+  if parameters['plot_s_curve']:
+    plotSCurve(parameters, logger, figure_name=fig_name)
+
   input_file = os.path.join(parameters['running_dir'], '{0}.i'.format(SIM_ITER_NAME))
   finished = False
   while not finished:
@@ -505,7 +512,7 @@ def runContinuation(parameters, logger):
       finished = True
 
     if parameters['plot_s_curve']:
-      plotSCurve(parameters, logger)
+      plotSCurve(parameters, logger, figure_name=fig_name)
   
   # Finished, clean up
   os.chdir(initial_cwd)
@@ -514,28 +521,30 @@ def runContinuation(parameters, logger):
 if __name__ == "__main__":
   # User input
   outpud_dir = '.'
-  ds = 1e-1
   parameters = {
     'continuation_variable':'Gruntfest', # in ['Gruntfest', 'Lewis']
     'lambda_initial_1':1e-8, #ds,
     'lambda_initial_2':2e-8, #2*ds,
-    'ds_initial':ds,
-    's_max':15,
+    'ds_initial':5e-2,
+    's_max':0.5,
+    'rescaling_factor':4.5399929762e-5, # to multiply continuation parameter
     # Rescaling factor
     'rescaling_factor':1, # to multiply continuation parameter
     # Numerical parameters
     'exec_loc':'~/projects/redback/redback-opt',
     'nb_threads':1,
-    'input_file':'benchmark_1_T/bench1_a.i',#'benchmark_4_TH/bench_TH.i',
-    'running_dir':'running_tmp',
-    'result_curve_csv':'S_curve.csv',
+    'input_file':'input_files/benchmark_1_T/bench1_a.i',#'benchmark_4_TH/bench_TH.i',
+    'running_dir':'input_files/benchmark_1_T/running_tmp',
+    'result_curve_csv':'input_files/benchmark_1_T/S_curve.csv',
     'error_filename':'error_output.txt',
-    'plot_s_curve':False,
-    'ref_s_curve':'benchmark_1_T/ref.csv',
-    'plot_norm':'L_inf', # in ['L2', 'L_inf']
-    'plot_solution_index':0, # index of solution to plot
     # step refinement
     'step_change_factor':0.25, # multiplying factor of step size when step fails
+    # plot
+    'plot_s_curve':True,
+    'non_blocking':True,
+    'ref_s_curve':'input_files/benchmark_1_T/ref.csv',
+    'plot_norm':'L_inf', # in ['L2', 'L_inf']
+    'plot_solution_index':0, # index of solution to plot
   }
   logger = getLogger('sim', os.path.join(outpud_dir, 'log.txt'), logging.INFO)
   results = runContinuation(parameters, logger)
