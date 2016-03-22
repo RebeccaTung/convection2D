@@ -233,6 +233,11 @@
     value_type = min
   [../]
   [./Nusselt_number]
+    type = DifferencePostprocessor
+    value1 = 1
+    value2 = one_minus_Nusselt
+  [../]
+  [./one_minus_Nusselt]
     type = SideIntegralVariablePostprocessor
     variable = grad_temp
     boundary = bottom
