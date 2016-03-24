@@ -690,7 +690,8 @@ def __setExecutionerSteady(sim_data):
         attr['value'] = 'Steady'
         break
   if do_change:
-    attributes_to_remove = ['num_steps', 'ss_check_tol', 'end_time', 'dtmax', 'scheme'] # not exhaustive for now...
+    attributes_to_remove = ['num_steps', 'ss_check_tol', 'end_time', 'dtmax', 'scheme',
+                            'dt', 'dtmin', 'reset_dt', 'start_time'] # not exhaustive for now...
     children_to_remove = ['TimeStepper'] # not exhaustive for now...
     indices_to_remove = []
     for i_attr, attr in enumerate(executioner['attributes']):
