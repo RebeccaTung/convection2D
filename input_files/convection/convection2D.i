@@ -42,7 +42,7 @@
     Peclet_number = 1.0
     phi0 = 0.3
     pressurization_coefficient = 0.166923076923
-    ref_lewis_nb = 4.69267773818e-08
+    ref_lewis_nb = 2.89856558908e-08 #Rayleigh 45
     solid_compressibility = 0.001
     solid_density = 2.5
     solid_thermal_expansion = 1e-05
@@ -53,7 +53,7 @@
 [Functions]
   [./init_gradient_T]
     type = ParsedFunction
-    value = '0.0-y*(1.0-0.0)*1000/500 + 0.2*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
+    value = '0.0-y*(1.0-0.0)*1000/500 + 0.3*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
   [../]
   [./init_gradient_P]
     type = ParsedFunction
@@ -68,6 +68,7 @@
 []
 
 [ICs]
+  active = 'temp_IC'
   [./temp_IC]
     variable = temp
     type = FunctionWithRandomIC
@@ -82,6 +83,7 @@
 []
 
 [BCs]
+  active = 'temperature_bottom temperature_top'
   [./temperature_top]
     type = DirichletBC
     variable = temp
@@ -245,14 +247,20 @@
 []
 
 [Executioner]
+  start_time = 0.0
+  end_time = 1e5
+  dtmax = 1e5
+  dtmin = 1e-15
   type = Transient
   num_steps = 100000
+  dt = 0.1
   l_max_its = 200
   nl_max_its = 10
   solve_type = PJFNK
   petsc_options_iname = '-ksp_type -pc_type -sub_pc_type -ksp_gmres_restart '
   petsc_options_value = 'gmres asm lu 201'
   nl_abs_tol = 1e-9 # 1e-10 to begin with
+  reset_dt = true
   line_search = basic
 []
 
