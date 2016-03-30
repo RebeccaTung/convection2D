@@ -13,6 +13,19 @@
   ymax = 0
 []
 
+[MeshModifiers]
+  [./top_left]
+    type = AddExtraNodeset
+    new_boundary = 98
+    coord = '0 0'
+  [../]
+  [./top_right]
+    type = AddExtraNodeset
+    new_boundary = 99
+    coord = '1 0'
+  [../]
+[]
+
 [Variables]
   [./temp]
   [../]
@@ -34,17 +47,13 @@
     delta = 0.0333333333333
     eta1 = 1e3
     fluid_compressibility = 0.002
-    fluid_density = 1
     fluid_thermal_expansion = 0.0007
-    gr = 1
     gravity = '0 -1.96 0'
-    mu = 0
     Peclet_number = 1.0
     phi0 = 0.3
     pressurization_coefficient = 0.166923076923
-    ref_lewis_nb = 2.89856558908e-08 #Rayleigh 45
+    ref_lewis_nb = 2.8e-08
     solid_compressibility = 0.001
-    solid_density = 2.5
     solid_thermal_expansion = 1e-05
     total_porosity = total_porosity
   [../]
@@ -57,7 +66,7 @@
   [../]
   [./init_gradient_P]
     type = ParsedFunction
-    value = 0.02-1.96*y
+    value = 0-1.96*y
   [../]
   [./timestep_function]
     type = ParsedFunction
@@ -68,22 +77,21 @@
 []
 
 [ICs]
-  active = 'temp_IC'
   [./temp_IC]
     variable = temp
     type = FunctionWithRandomIC
     function = init_gradient_T
     max = 0
   [../]
-  [./press_IC]
+  [./pressure_IC]
+    function = init_gradient_P
     variable = pore_pressure
     type = FunctionIC
-    function = init_gradient_P
   [../]
 []
 
 [BCs]
-  active = 'temperature_bottom temperature_top'
+  active = 'temperature_bottom temperature_top top_corners_p'
   [./temperature_top]
     type = DirichletBC
     variable = temp
@@ -101,6 +109,12 @@
     variable = pore_pressure
     boundary = top
     value = 0.02
+  [../]
+  [./top_corners_p]
+    type = DirichletBC
+    variable = pore_pressure
+    boundary = '98 99'
+    value = 0
   [../]
 []
 
@@ -123,7 +137,7 @@
 []
 
 [Kernels]
-  active = 'pres_conv press_td temp_diff temp_td temp_conv press_diff'
+  active = 'pres_conv temp_diff temp_conv press_diff'
   [./temp_td]
     type = TimeDerivative
     variable = temp
@@ -260,13 +274,14 @@
   petsc_options_iname = '-ksp_type -pc_type -sub_pc_type -ksp_gmres_restart '
   petsc_options_value = 'gmres asm lu 201'
   nl_abs_tol = 1e-9 # 1e-10 to begin with
-  reset_dt = true
   line_search = basic
 []
 
 [Outputs]
-  file_base = convection2D
+  file_base = extra_param_initial_guess1
   exodus = true
+  csv = true
+  execute_on = 'initial timestep_end'
   [./console]
     type = Console
     perf_log = true
