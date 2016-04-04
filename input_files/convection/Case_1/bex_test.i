@@ -13,10 +13,33 @@
   ymax = 0
 []
 
+[MeshModifiers]
+  [./top_left]
+    type = AddExtraNodeset
+    new_boundary = 98
+    coord = '0 0'
+  [../]
+  [./top_right]
+    type = AddExtraNodeset
+    new_boundary = 99
+    coord = '1 0'
+  [../]
+[]
+
 [Variables]
   [./temp]
+    [./InitialCondition]
+      function = init_temp
+      type = FunctionIC
+      variable = temp
+    [../]
   [../]
   [./pore_pressure]
+    [./InitialCondition]
+      function = init_p
+      type = FunctionIC
+      variable = pore_pressure
+    [../]
   [../]
 []
 
@@ -34,54 +57,39 @@
     delta = 0.0333333333333
     eta1 = 1e3
     fluid_compressibility = 0.002
-    fluid_density = 1
     fluid_thermal_expansion = 0.0007
-    gr = 1
     gravity = '0 -1.96 0'
-    mu = 0
     Peclet_number = 1.0
     phi0 = 0.3
     pressurization_coefficient = 0.166923076923
-    ref_lewis_nb = 4.69267773818e-08
+    ref_lewis_nb = 2.8e-08
     solid_compressibility = 0.001
-    solid_density = 2.5
     solid_thermal_expansion = 1e-05
     total_porosity = total_porosity
   [../]
 []
 
 [Functions]
-  [./init_gradient_T]
-    type = ParsedFunction
-    value = '0.0-y*(1.0-0.0)*1000/500 + 0.2*1/2*(cos(pi*(2*y-(-0.5)-0)/(0-(-0.5)))+1)*cos(pi*(2*x-0-1)/(1-0))'
-  [../]
-  [./init_gradient_P]
-    type = ParsedFunction
-    value = 0.02-1.96*y
-  [../]
   [./timestep_function]
     type = ParsedFunction
     value = 'min(max(1e-15, dt*max(0.2, 1-0.05*(n_li-50))), (1e-1)*50.0/max(abs(v_max), abs(v_min)))'
     vals = 'num_li num_nli min_fluid_vel_y max_fluid_vel_y dt'
     vars = 'n_li n_nli v_min v_max dt'
   [../]
-[]
-
-[ICs]
-  [./temp_IC]
-    variable = temp
-    type = FunctionWithRandomIC
-    function = init_gradient_T
-    max = 0
+  [./init_p]
+    type = SolutionFunction
+    from_variable = pore_pressure
+    solution = UO_p
   [../]
-  [./press_IC]
-    variable = pore_pressure
-    type = FunctionIC
-    function = init_gradient_P
+  [./init_temp]
+    type = SolutionFunction
+    from_variable = temp
+    solution = UO_temp
   [../]
 []
 
 [BCs]
+  active = 'temperature_bottom temperature_top top_corners_p'
   [./temperature_top]
     type = DirichletBC
     variable = temp
@@ -99,6 +107,12 @@
     variable = pore_pressure
     boundary = top
     value = 0.02
+  [../]
+  [./top_corners_p]
+    type = DirichletBC
+    variable = pore_pressure
+    boundary = '98 99'
+    value = 0
   [../]
 []
 
@@ -121,7 +135,7 @@
 []
 
 [Kernels]
-  active = 'pres_conv press_td temp_diff temp_td temp_conv press_diff'
+  active = 'pres_conv temp_diff temp_conv press_diff'
   [./temp_td]
     type = TimeDerivative
     variable = temp
@@ -180,6 +194,23 @@
     execute_on = timestep_end
     boundary = bottom
     gradient_variable = temp
+  [../]
+[]
+
+[UserObjects]
+  [./UO_temp]
+    type = SolutionUserObject
+    timestep = LATEST
+    system_variables = temp
+    mesh = test_output.e
+    execute_on = initial
+  [../]
+  [./UO_p]
+    type = SolutionUserObject
+    timestep = LATEST
+    system_variables = pore_pressure
+    mesh = test_output.e
+    execute_on = initial
   [../]
 []
 
@@ -246,7 +277,6 @@
 
 [Executioner]
   type = Transient
-  num_steps = 100000
   l_max_its = 200
   nl_max_its = 10
   solve_type = PJFNK
@@ -257,11 +287,15 @@
 []
 
 [Outputs]
-  file_base = convection2D
+  file_base = bex_test
   exodus = true
+  csv = true
+  execute_on = 'initial timestep_end'
+  print_linear_residuals = false
   [./console]
     type = Console
     perf_log = true
     output_linear = true
   [../]
 []
+
