@@ -1,0 +1,4 @@
+time,Nusselt_number,dt,max_fluid_vel_y,middle_porosity,middle_press,middle_temp,min_fluid_vel_y,new_timestep,num_li,num_nli,one_minus_Nusselt
+0,1,0,0,0.3,0.51,0.7,0,0,0,0,0
+1,3.1371808929622,0,9.7863776653885,0.3,0.51016972020876,0.60941933623375,-8.7427183143004,1e-15,172,6,-2.1371808929622
+
