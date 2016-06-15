@@ -13,6 +13,10 @@
   [../]
   [./pore_pressure]
   [../]
+  [./disp_x]
+  [../]
+  [./disp_y]
+  [../]
 []
 
 [Materials]
@@ -39,6 +43,7 @@
     solid_thermal_expansion = 1e-05
     total_porosity = total_porosity
     inverse_lewis_number_tilde = inv_Le_perturb
+    gr = 1e-02
   [../]
   [./redback_materialA]
     type = RedbackMaterial
@@ -62,6 +67,15 @@
     solid_compressibility = 0.001
     solid_thermal_expansion = 1e-05
     total_porosity = total_porosity
+    gr = 0
+  [../]
+  [./plastic_mat]
+    type = RedbackMechMaterialDP
+    disp_y = disp_y
+    disp_x = disp_x
+    yield_stress = '0 1 1 1'
+    poisson_ratio = 0.25
+    youngs_modulus = 100
   [../]
 []
 
@@ -95,6 +109,37 @@
     vals = 'max_gradT_x max_gradT_y min_gradT_x min_gradT_y'
     vars = 'x_max y_max x_min y_min'
   [../]
+  [./loading_left]
+    type = ParsedFunction
+    value = 1e-2*t
+  [../]
+  [./loading_right]
+    type = ParsedFunction
+    value = -1e-2*t
+  [../]
+[]
+
+[ICs]
+  [./IC_temp]
+    function = init_gradient_T
+    variable = temp
+    type = FunctionIC
+    block = '0 1 2'
+  [../]
+  [./IC_pressure]
+    function = init_gradient_P
+    variable = pore_pressure
+    type = FunctionIC
+    block = '0 1 2'
+  [../]
+  [./inv_Le_randomIC]
+    # Inverse of Lewis number perturbation such that
+    # 1/Le = 1/Le + 1/Le_perturb
+    variable = inv_Le_perturb
+    standard_deviation = 0.5
+    type = FunctionLogNormalDistributionIC
+    mean = 2e+07
+  [../]
 []
 
 [BCs]
@@ -115,6 +160,30 @@
     variable = pore_pressure
     boundary = 2
     value = 0.02
+  [../]
+  [./top_corners_p]
+    type = DirichletBC
+    variable = pore_pressure
+    boundary = 7
+    value = 0
+  [../]
+  [./left_disp_x]
+    type = FunctionDirichletBC
+    variable = disp_x
+    boundary = 3
+    function = loading_left
+  [../]
+  [./right_disp_x]
+    type = FunctionDirichletBC
+    variable = disp_x
+    boundary = 1
+    function = loading_right
+  [../]
+  [./bottom_disp_y]
+    type = DirichletBC
+    variable = disp_y
+    boundary = 0
+    value = 0
   [../]
 []
 
@@ -146,10 +215,26 @@
     order = CONSTANT
     family = MONOMIAL
   [../]
+  [./mises_stress]
+    order = CONSTANT
+    family = MONOMIAL
+  [../]
+  [./mean_stress]
+    order = CONSTANT
+    family = MONOMIAL
+  [../]
+  [./disp_x_output]
+  [../]
+  [./disp_y_output]
+  [../]
+  [./eqv_plastic_strain]
+    order = CONSTANT
+    family = MONOMIAL
+  [../]
 []
 
 [Kernels]
-  active = 'pres_conv press_td temp_diff temp_td temp_conv press_diff'
+  active = 'pres_conv mechanical_dissipation temp_diff poromechanics temp_conv press_diff'
   [./temp_td]
     type = TimeDerivative
     variable = temp
@@ -179,6 +264,15 @@
     type = RedbackThermalPressurization
     variable = pore_pressure
     temperature = temp
+  [../]
+  [./poromechanics]
+    type = RedbackPoromechanics
+    variable = pore_pressure
+    temperature = temp
+  [../]
+  [./mechanical_dissipation]
+    type = RedbackMechDissip
+    variable = temp
   [../]
 []
 
@@ -217,6 +311,21 @@
     component = y
     gradient_variable = temp
   [../]
+  [./mises_stress]
+    type = MaterialRealAux
+    variable = mises_stress
+    property = mises_stress
+  [../]
+  [./mean_stress]
+    type = MaterialRealAux
+    variable = mean_stress
+    property = mean_stress
+  [../]
+  [./eqv_plastic_strain]
+    type = MaterialRealAux
+    variable = eqv_plastic_strain
+    property = eqv_plastic_strain
+  [../]
 []
 
 [Preconditioning]
@@ -228,7 +337,6 @@
 []
 
 [Postprocessors]
-  active = 'num_nli max_gradT_y max_gradT_x min_fluid_vel_y num_li min_gradT_y min_gradT_x middle_porosity middle_press new_timestep max_fluid_vel_y dt New_Nusselt_postproc'
   [./middle_temp]
     type = PointValue
     variable = temp
@@ -316,8 +424,17 @@
   line_search = basic
 []
 
+[RedbackMechAction]
+  [./Bec]
+    temp = temp
+    pore_pres = pore_pressure
+    disp_y = disp_y
+    disp_x = disp_x
+  [../]
+[]
+
 [Outputs]
-  file_base = 2d_3layers_curved
+  file_base = mech_folded
   print_linear_residuals = false
   [./console]
     type = Console
@@ -329,29 +446,6 @@
     file_base = 2d_3layers_curved
     type = Exodus
     elemental_as_nodal = true
-  [../]
-[]
-
-[ICs]
-  [./IC_temp]
-    function = init_gradient_T
-    variable = temp
-    type = FunctionIC
-    block = '0 1 2'
-  [../]
-  [./IC_pressure]
-    function = init_gradient_P
-    variable = pore_pressure
-    type = FunctionIC
-    block = '0 1 2'
-  [../]
-  [./inv_Le_randomIC]
-    # Inverse of Lewis number perturbation such that
-    # 1/Le = 1/Le + 1/Le_perturb
-    variable = inv_Le_perturb
-    standard_deviation = 0.5
-    type = FunctionLogNormalDistributionIC
-    mean = 2e+07
   [../]
 []
 
