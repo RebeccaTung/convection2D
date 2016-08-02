@@ -95,6 +95,12 @@
     vals = 'max_gradT_x max_gradT_y min_gradT_x min_gradT_y'
     vars = 'x_max y_max x_min y_min'
   [../]
+  [./grad_for_Nusselt]
+    type = ParsedFunction
+    value = (max_norm_grad_T)/((T_bottom-T_top)/height)
+    vals = 'max_norm_grad_T  1               0        1'
+    vars = 'max_norm_grad_T T_bottom T_top height'
+  [../]
 []
 
 [BCs]
@@ -143,6 +149,10 @@
     family = MONOMIAL
   [../]
   [./inv_Le_perturb]
+    order = CONSTANT
+    family = MONOMIAL
+  [../]
+  [./norm_grad_T]
     order = CONSTANT
     family = MONOMIAL
   [../]
@@ -217,6 +227,12 @@
     component = y
     gradient_variable = temp
   [../]
+  [./grad_T]
+    type = VectorMagnitudeAux
+    variable = norm_grad_T
+    x = grad_temp_x_var
+    y = grad_temp_y_var
+  [../]
 []
 
 [Preconditioning]
@@ -228,7 +244,7 @@
 []
 
 [Postprocessors]
-  active = 'num_nli max_gradT_y max_gradT_x min_fluid_vel_y num_li min_gradT_y min_gradT_x middle_porosity middle_press new_timestep max_fluid_vel_y dt New_Nusselt_postproc'
+  active = 'num_nli max_gradT_y max_gradT_x min_fluid_vel_y num_li min_gradT_y min_gradT_x middle_porosity middle_press new_timestep max_fluid_vel_y dt New_Nusselt_postproc norm_grad_T max_norm_grad_T Bec_New_Nusselt'
   [./middle_temp]
     type = PointValue
     variable = temp
@@ -300,6 +316,18 @@
     type = ElementExtremeValue
     variable = grad_temp_y_var
     value_type = min
+  [../]
+  [./norm_grad_T]
+    type = ElementL2Norm
+    variable = norm_grad_T
+  [../]
+  [./max_norm_grad_T]
+    type = ElementExtremeValue
+    variable = norm_grad_T
+  [../]
+  [./Bec_New_Nusselt]
+    type = FunctionValuePostprocessor
+    function = grad_for_Nusselt
   [../]
 []
 
