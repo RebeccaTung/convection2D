@@ -272,7 +272,7 @@
 []
 
 [Outputs]
-  file_base = extra_param_initial_guess1
+  file_base = last_result
   exodus = true
   csv = true
   execute_on = 'initial timestep_end'
